@@ -182,10 +182,18 @@ L1 routes are not called. The reviewed catalog lists `atomic/update`, `atomic/qu
 - Client tests: a fake HTTP server for L0 add, L0 search, headers, and redaction.
 - `MemoryFactProjection` and `MemoryNotice` have no runtime test. Nothing emits them.
 
+## Service mode
+
+The live store calls MemoryCore only. `packages/stage-ui/src/database/repos/memory.repo.ts` still holds the IndexedDB records, and the store does not call it. The settings page can turn the memory service on. When the service is off, the address is incomplete, or a request fails, the index is empty and `serviceError` says why. The store does not read or write IndexedDB in any of those cases.
+
+The page calls MemoryCore over HTTP. The address, the team id, the user id, the service id, and the optional API key are device settings. The key is not in the source bundle. A later channel RPC can move the key off the page. That move is still open.
+
+Facts are L0 messages in session `airi:facts`. The agent id is the card id, or `airi:general`. The message body is a JSON fact. L1 extraction is a separate gateway pipeline. A local run with no model key returned no L1 items.
+
 ## Unresolved
 
 - Does `atomic/update` insert an unknown id, or only update an existing atom?
-- Which page-to-gateway transport avoids putting the key in the browser?
+- Will a later channel RPC replace the device-local API key, or will the page keep calling MemoryCore?
 - Which concurrency rule wins when two devices write different text?
 - Do scene-origin facts stay visible on every session of the card?
 - Will MemoryCore add a client watch, or must the view poll?

@@ -68,6 +68,14 @@ describe('channel module', () => {
         calls.push('search')
         throw new Error('unexpected search')
       },
+      async queryConversation() {
+        calls.push('query')
+        throw new Error('unexpected query')
+      },
+      async deleteConversation() {
+        calls.push('delete')
+        throw new Error('unexpected delete')
+      },
     }
 
     const started = await startMemoryModule({
