@@ -73,6 +73,17 @@ const {
       <div :class="['i-solar:alt-arrow-right-linear', 'text-neutral-400']" />
     </RouterLink>
     <RouterLink
+      to="/settings/modules/memory-graph"
+      :class="['rounded-lg', 'bg-neutral-50 dark:bg-neutral-800', 'p-4', 'flex items-center', 'gap-3', 'transition-colors', 'hover:bg-neutral-100 dark:hover:bg-neutral-700']"
+    >
+      <div :class="['i-solar:share-circle-bold-duotone', 'text-2xl', 'text-primary-500 dark:text-primary-400']" />
+      <div :class="['flex-1', 'flex flex-col', 'gap-1']">
+        <span :class="['text-lg font-medium']">{{ t('settings.pages.modules.memory-long-term.graph.entry.title') }}</span>
+        <span :class="['text-sm', 'text-neutral-500 dark:text-neutral-400']">{{ t('settings.pages.modules.memory-long-term.graph.entry.description') }}</span>
+      </div>
+      <div :class="['i-solar:alt-arrow-right-linear', 'text-neutral-400']" />
+    </RouterLink>
+    <RouterLink
       to="/settings/modules/memory-long-term-memories"
       :class="['rounded-lg', 'bg-neutral-50 dark:bg-neutral-800', 'p-4', 'flex items-center', 'gap-3', 'transition-colors', 'hover:bg-neutral-100 dark:hover:bg-neutral-700']"
     >

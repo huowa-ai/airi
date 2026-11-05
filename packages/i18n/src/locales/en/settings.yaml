@@ -1134,6 +1134,40 @@ pages:
         entry:
           title: Memories
           description: Each character's secrets, and the secrets that they share.
+      graph:
+        title: Memory graph
+        description: A view of the facts the memory service returned. The picture uses a whale-shaped layout. Lines in the picture are layout only.
+        off-title: Memory service is off
+        off: Turn the memory service on to see facts. This view does not list memories kept only on this device.
+        error-title: Memory service error
+        error: The memory service did not return facts.
+        loading: Reading the memory service.
+        empty-title: No facts
+        empty: The memory service returned no facts.
+        reduced: Motion is reduced. The graph stays still. The list shows the same facts.
+        unavailable-title: Graph view unavailable
+        unavailable: The graph view did not start. The fact list still shows the same facts.
+        layers:
+          l0: L0 fact
+          absent: '{layer} was not returned'
+        derived: Derived layout line. This line is not a stored relation.
+        counts: 'Facts: {count}. Derived layout lines: {lines}.'
+        canvas-label: 'Memory graph of {count} facts and {lines} derived layout lines.'
+        facts: Facts
+        list-empty: No facts to list.
+        detail: Fact
+        card: Character
+        shared: Shared
+        updated: Updated
+        source: Source
+        no-source: No source is stored for this fact.
+        session: 'Session {id}'
+        turn: 'Turn {id}'
+        binding: 'Scene {id}'
+        modality: 'Modality {name}'
+        entry:
+          title: Memory graph
+          description: Facts from the memory service, in a whale-shaped layout.
       recipes:
         title: Recipes
         empty: No recipes yet.

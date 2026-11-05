@@ -35,15 +35,31 @@ export default defineConfig({
     }),
   ],
   test: {
-    include: ['src/**/*.browser.test.ts'],
-    browser: {
-      enabled: true,
-      headless: true,
-      // The Voiceprint page records from the microphone. Chromium then uses a fake device without a permission prompt.
-      provider: playwright({ launchOptions: { args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] } }),
-      instances: [
-        { browser: 'chromium' },
-      ],
-    },
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: 'node',
+          include: ['src/**/*.test.ts'],
+          exclude: ['src/**/*.browser.test.ts'],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'browser',
+          include: ['src/**/*.browser.test.ts'],
+          browser: {
+            enabled: true,
+            headless: true,
+            // The Voiceprint page records from the microphone. Chromium then uses a fake device without a permission prompt.
+            provider: playwright({ launchOptions: { args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] } }),
+            instances: [
+              { browser: 'chromium' },
+            ],
+          },
+        },
+      },
+    ],
   },
 })

@@ -53,6 +53,7 @@ describe('memory store', () => {
     expect(memory.read(game.id, 'airi')?.body).toBe('Minecraft.')
     expect(memory.indexFor('airi')).toBe(`Your own:\n- ${other.id}: What the owner plays.\n- ${game.id}: What the owner plays now.`)
     expect(memory.serviceRead).toBe('ready')
+    expect(memory.listFacts().map(entry => entry.body)).toContain('Minecraft.')
   })
 
   // A card keeps its own memories. Only the owner makes one general, and then every card reads it.
@@ -133,6 +134,7 @@ describe('memory store', () => {
 
     expect(memory.serviceRead).toBe('off')
     expect(memory.entries).toEqual([])
+    expect(memory.listFacts()).toEqual([])
     expect(await memory.write({ description: 'Drink', body: 'Ada likes tea.' }, 'airi')).toBeUndefined()
     expect(memory.entries).toEqual([])
     expect((await memoryRepo.list()).map(entry => entry.body)).toEqual(['Porridge on this device.'])
