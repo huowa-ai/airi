@@ -29,7 +29,10 @@ async function storedEntry(id: string) {
   return stored && !('deleted' in stored) ? stored : undefined
 }
 
-/** Long-term memory on this device, one record for each entry, keyed by the entry id. */
+/**
+ * IndexedDB records for long-term memory, one record for each entry.
+ * The live memory store does not call this module. It reads and writes MemoryCore only.
+ */
 export const memoryRepo = {
   /** The entries that are not removed, oldest change first. */
   async list() {

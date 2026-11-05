@@ -35,6 +35,52 @@ import { useMemoryStore } from './memory'
 import { useConsciousnessSettingsStore } from './modules/consciousness-settings'
 import { useRecipesStore } from './recipes'
 
+function memoryServiceFetch() {
+  const rows: { id: string, agentId: string, sessionId: string, content: string }[] = []
+  let nextId = 1
+  return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    const body = JSON.parse(String(init?.body ?? '{}')) as {
+      agent_id?: string
+      session_id?: string
+      messages?: { content: string }[]
+      message_ids?: string[]
+      session_ids?: string[]
+    }
+    const agentId = body.agent_id ?? ''
+    if (url.endsWith('/v3/conversation/add')) {
+      const acceptedIds = (body.messages ?? []).map((message) => {
+        const id = `msg-${nextId}`
+        nextId += 1
+        rows.push({ id, agentId, sessionId: body.session_id ?? '', content: message.content })
+        return id
+      })
+      return Response.json({
+        code: 0,
+        message: 'ok',
+        data: { accepted_ids: acceptedIds, accepted_versions: acceptedIds.map(() => 'v1'), total_count: acceptedIds.length },
+      })
+    }
+    if (url.endsWith('/v3/conversation/query')) {
+      const messages = rows
+        .filter(row => row.agentId === agentId && row.sessionId === body.session_id)
+        .map(row => ({ id: row.id, role: 'user', content: row.content, session_id: row.sessionId, agent_id: row.agentId }))
+      return Response.json({ code: 0, message: 'ok', data: { messages, total: messages.length } })
+    }
+    if (url.endsWith('/v3/conversation/delete')) {
+      const ids = new Set(body.message_ids ?? [])
+      const sessions = new Set(body.session_ids ?? [])
+      for (let index = rows.length - 1; index >= 0; index -= 1) {
+        const row = rows[index]
+        if (row && row.agentId === agentId && (ids.has(row.id) || sessions.has(row.sessionId)))
+          rows.splice(index, 1)
+      }
+      return Response.json({ code: 0, message: 'ok', data: { deleted_count: 1 } })
+    }
+    return Response.json({ code: 404, message: 'missing' }, { status: 404 })
+  })
+}
+
 const traceRecords: TraceRecord[] = []
 let stopTraceTransport: (() => void) | undefined
 
@@ -294,6 +340,7 @@ function storedToolImageMessage(): ChatHistoryItem {
 
 describe('chat store contract', () => {
   beforeEach(async () => {
+    vi.unstubAllGlobals()
     await memoryRepo.clear()
     await recipesRepo.clear()
     cardPrompt.value = 'system prompt'
@@ -677,6 +724,13 @@ describe('chat store contract', () => {
       await options.onStreamEvent({ type: 'finish' })
     })
     const memory = useMemoryStore()
+    vi.stubGlobal('fetch', memoryServiceFetch())
+    memory.serviceEnabled = true
+    memory.serviceEndpoint = 'http://127.0.0.1:9'
+    memory.serviceTeamId = 'team-example'
+    memory.serviceUserId = 'user-example'
+    await nextTick()
+    await memory.ready()
     const nickname = (await memory.write({ description: 'What the owner likes to be called.', body: 'Yumeka.' }, 'default'))!
     await memory.makeGeneral(nickname)
     const rules = (await memory.write({ description: 'Rules of this channel.', body: 'No spoilers.' }, 'discord-host'))!
@@ -789,12 +843,9 @@ describe('chat store contract', () => {
   it('routes cancellation from a follower window to the leader runtime', async () => {
     // ROOT CAUSE:
     //
-    // The Electron chat window owns a follower-only Pinia runtime. Calling an
-    // unsynchronized cancellation action there only reached its idle local
-    // chat runtime, so the leader window kept generating the LLM response.
-    //
-    // Cancellation is now a synchronized action. The follower RPC reaches the
-    // leader-owned AbortController and waits for the active send to settle.
+    // A follower-only Pinia runtime kept cancellation local, so the leader
+    // kept generating. Cancellation is now synchronized. The follower RPC
+    // reaches the leader AbortController and waits for the send to settle.
     const namespace = `chat-cancellation:${crypto.randomUUID()}`
     const leaderPinia = createPinia()
     const leaderRuntime = createSyncedPiniaPlugin({
@@ -1220,13 +1271,10 @@ describe('chat store contract', () => {
   it('restarts chat consumers when this renderer becomes the leader', async () => {
     // ROOT CAUSE:
     //
-    // The application stopped observing chat leadership changes. If the Web
-    // leader closed, the promoted renderer kept the replicated session state
-    // but did not start a new cloud WebSocket.
-    //
-    // The chat store now owns the leadership subscription. It starts the
-    // session consumers after promotion and stops local consumers after
-    // demotion or disposal.
+    // Chat leadership changes were ignored. After the Web leader closed, the
+    // next renderer kept session state and did not open a cloud WebSocket.
+    // The chat store now subscribes to leadership. It starts consumers after
+    // promotion and stops them after demotion or disposal.
     let leadershipListener: ((isLeader: boolean) => void) | undefined
     const stopLeadershipListener = vi.fn()
     const syncedPinia: SyncedPiniaRuntime = {

@@ -1108,7 +1108,7 @@ pages:
       enable-description: The character remembers what you talk about. When this is off, it remembers nothing.
       service:
         enable: Use the memory service
-        enable-description: When this is on, the character reads and writes only the memory service. Memories on this device stay here and are not copied. When this is off, the character uses only this device.
+        enable-description: When this is on, the character reads and writes only the memory service. When this is off, or the service cannot be reached, the character remembers nothing. This device does not keep a second copy.
         endpoint: Service address
         endpoint-description: An http or https origin, such as http://127.0.0.1:8420. Do not put a key in the address.
         team: Team id

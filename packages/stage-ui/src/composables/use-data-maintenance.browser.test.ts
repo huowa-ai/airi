@@ -323,12 +323,14 @@ it('forgets what the character learned when modules reset', async () => {
   await vi.waitFor(() => expect(runtime.isLeader()).toBe(true))
   const memory = useMemoryStore(pinia)
   const recipes = useRecipesStore(pinia)
-  await memory.write({ description: 'What the owner likes to be called.', body: 'Yumeka.' }, 'default')
+  expect(await memory.write({ description: 'What the owner likes to be called.', body: 'Yumeka.' }, 'default')).toBeUndefined()
+  expect(memory.serviceError).toBe('The memory service is off.')
   await recipes.add({ name: 'Check in', description: '', instructions: 'Greet softly.', keywords: [], enabled: true })
 
   await maintenance.resetModulesSettings()
 
   expect(memory.entries).toEqual([])
+  expect(memory.serviceError).toBe('The memory service is off.')
   expect(recipes.recipes.filter(recipe => recipe.source === 'user')).toEqual([])
 })
 

@@ -184,7 +184,7 @@ L1 routes are not called. The reviewed catalog lists `atomic/update`, `atomic/qu
 
 ## Service mode
 
-The settings page can turn the memory service on. The character then reads and writes only MemoryCore. Device memories stay on the device and are not copied into the prompt. When the service is off, the character uses only the device store. A failed service read shows an error and an empty index. It does not fall back to the device store.
+The live store calls MemoryCore only. `packages/stage-ui/src/database/repos/memory.repo.ts` still holds the IndexedDB records, and the store does not call it. The settings page can turn the memory service on. When the service is off, the address is incomplete, or a request fails, the index is empty and `serviceError` says why. The store does not read or write IndexedDB in any of those cases.
 
 The page calls MemoryCore over HTTP. The address, the team id, the user id, the service id, and the optional API key are device settings. The key is not in the source bundle. A later channel RPC can move the key off the page. That move is still open.
 

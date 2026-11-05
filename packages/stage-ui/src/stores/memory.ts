@@ -7,34 +7,14 @@ import { useLocalStorageManualReset } from '@proj-airi/stage-shared/composables'
 import { createMemoryClient, createRemoteMemoryStorage, GENERAL_AGENT_ID, memoryClientEnv, readMemoryClientConfig } from '@proj-airi/tencentdb-memory'
 import { useBroadcastChannel } from '@vueuse/core'
 import { defineStore } from 'pinia'
-import { v7 as uuidv7 } from 'uuid'
 import { computed, ref, watch } from 'vue'
 
-import { memoryRepo } from '../database/repos/memory.repo'
-
-const LEGACY_ENTRIES_STORAGE_KEY = 'memory/entries'
-
-// NOTICE:
-// v0.13.1 kept entries in localStorage under `memory/entries`, keyed by a model-chosen name.
-// Two facts could share a name. IndexedDB stores them now, with store-made ids.
-// The lock stops two windows that start together from moving the same entries twice.
-// Removal condition: two releases after the release that moves them.
-async function moveLegacyEntries() {
-  if (!globalThis.localStorage?.getItem(LEGACY_ENTRIES_STORAGE_KEY))
-    return
-  await navigator.locks.request('airi:memory-move', async () => {
-    const stored = localStorage.getItem(LEGACY_ENTRIES_STORAGE_KEY)
-    if (!stored)
-      return
-    const legacy: (Omit<MemoryEntry, 'id'> & { name: string })[] = JSON.parse(stored)
-    await memoryRepo.add(legacy.map(({ description, body, persona, updatedAt }) => ({ id: uuidv7(), description, body, persona, updatedAt })))
-    localStorage.removeItem(LEGACY_ENTRIES_STORAGE_KEY)
-  })
-}
+const serviceOffMessage = 'The memory service is off.'
+const serviceConfigMessage = 'Set the service address, the team id, and the user id.'
 
 /**
  * Long-term memory as a small index and one entry per fact, kept by the character itself.
- * IndexedDB keeps the entries. After each change, the other windows read them again.
+ * MemoryCore is the only store this module calls. A service that is off or unreachable leaves the index empty.
  *
  * Use when:
  * - A run reads the index or an entry, writes or forgets a fact, or Settings lists the memories by card.
@@ -54,14 +34,15 @@ export const useMemoryStore = defineStore('memory', () => {
   const serviceUserId = useLocalStorageManualReset('memory/service-user-id', '')
   const serviceApiKey = useLocalStorageManualReset('memory/service-api-key', '')
   const serviceId = useLocalStorageManualReset('memory/service-id', '')
-  const serviceError = ref('')
+  const serviceError = ref(serviceOffMessage)
   const entries = ref<MemoryEntry[]>([])
   let remote: MemoryStorage | undefined
 
   function connectService() {
     if (!serviceEnabled.value) {
       remote = undefined
-      serviceError.value = ''
+      entries.value = []
+      serviceError.value = serviceOffMessage
       return
     }
 
@@ -75,7 +56,8 @@ export const useMemoryStore = defineStore('memory', () => {
     })
     if (!config.configured) {
       remote = undefined
-      serviceError.value = 'Set the service address, the team id, and the user id.'
+      entries.value = []
+      serviceError.value = serviceConfigMessage
       return
     }
 
@@ -83,16 +65,11 @@ export const useMemoryStore = defineStore('memory', () => {
     serviceError.value = ''
   }
   const { data: changed, post } = useBroadcastChannel<string[], string[]>({ name: 'airi:memory' })
-  let pendingLoad = moveLegacyEntries()
-    .catch(error => console.warn('[memory] Failed to move the entries from localStorage:', errorMessageFrom(error)))
+  let pendingLoad = Promise.resolve()
 
   /** Reads the entries again, after the reads that started before. */
   function load() {
     pendingLoad = pendingLoad.catch(() => {}).then(async () => {
-      if (!serviceEnabled.value) {
-        entries.value = await memoryRepo.list()
-        return
-      }
       if (!remote) {
         entries.value = []
         return
@@ -110,7 +87,7 @@ export const useMemoryStore = defineStore('memory', () => {
   }
 
   /**
-   * Resolves after every read that started before the call, the first read and the move from localStorage included.
+   * Resolves after every read that started before the call, the first read included.
    * Until then, `entries` is empty because nothing is read yet, not because nothing is remembered.
    */
   function ready() {
@@ -150,98 +127,94 @@ export const useMemoryStore = defineStore('memory', () => {
     const body = input.body.trim()
     if (!body)
       return undefined
-    if (serviceEnabled.value) {
-      if (!remote) {
-        serviceError.value = 'Set the service address, the team id, and the user id.'
-        return undefined
-      }
-      try {
-        const result = await remote.write({ id: input.id, description: input.description.trim(), body }, personaId, Date.now())
-        if (result.outcome === 'empty')
-          return undefined
-        if (result.outcome !== 'saved' && result.outcome !== 'unchanged') {
-          await publish([])
-          return undefined
-        }
-        await publish([result.entry.id])
-        return result.entry
-      }
-      catch (error) {
-        serviceError.value = publicServiceError(error)
-        return undefined
-      }
+    if (!remote) {
+      serviceError.value = serviceEnabled.value ? serviceConfigMessage : serviceOffMessage
+      return undefined
     }
-    const entry = await memoryRepo.write({ id: input.id, description: input.description.trim(), body }, personaId, Date.now())
-    await publish([entry.id])
-    return entry
+    try {
+      const result = await remote.write({ id: input.id, description: input.description.trim(), body }, personaId, Date.now())
+      if (result.outcome === 'empty')
+        return undefined
+      if (result.outcome !== 'saved' && result.outcome !== 'unchanged') {
+        await publish([])
+        return undefined
+      }
+      await publish([result.entry.id])
+      return result.entry
+    }
+    catch (error) {
+      serviceError.value = publicServiceError(error)
+      entries.value = []
+      return undefined
+    }
   }
 
   /** Makes a card's memory general, so every card reads it. */
   async function makeGeneral(entry: Pick<MemoryEntry, 'id'>) {
-    if (serviceEnabled.value) {
-      if (!remote)
-        return
-      try {
-        const result = await remote.makeGeneral(entry.id, Date.now())
-        if (result.outcome === 'saved')
-          await publish([entry.id])
-      }
-      catch (error) {
-        serviceError.value = publicServiceError(error)
-      }
+    if (!remote) {
+      serviceError.value = serviceEnabled.value ? serviceConfigMessage : serviceOffMessage
       return
     }
-    if (await memoryRepo.makeGeneral(entry.id, Date.now()))
-      await publish([entry.id])
+    try {
+      const result = await remote.makeGeneral(entry.id, Date.now())
+      if (result.outcome === 'saved')
+        await publish([entry.id])
+    }
+    catch (error) {
+      serviceError.value = publicServiceError(error)
+      entries.value = []
+    }
   }
 
   /** Removes one entry from Settings. */
   async function remove(entry: Pick<MemoryEntry, 'id'>) {
-    if (serviceEnabled.value) {
-      if (!remote)
-        return
-      try {
-        await remote.remove([entry.id], Date.now())
-        await publish([entry.id])
-      }
-      catch (error) {
-        serviceError.value = publicServiceError(error)
-      }
+    if (!remote) {
+      serviceError.value = serviceEnabled.value ? serviceConfigMessage : serviceOffMessage
       return
     }
-    await memoryRepo.remove([entry.id], Date.now())
-    await publish([entry.id])
+    try {
+      await remote.remove([entry.id], Date.now())
+      await publish([entry.id])
+    }
+    catch (error) {
+      serviceError.value = publicServiceError(error)
+      entries.value = []
+    }
   }
 
   /** Forgets an entry of the card by its id. General memories belong to the owner, so a run cannot forget them. */
   async function forget(id: string, personaId: string) {
-    if (serviceEnabled.value) {
-      if (!remote)
-        return false
-      try {
-        const forgot = await remote.forget(id, personaId, Date.now())
-        if (forgot)
-          await publish([id])
-        return forgot
-      }
-      catch (error) {
-        serviceError.value = publicServiceError(error)
-        return false
-      }
-    }
-    if (!await memoryRepo.forget(id, personaId, Date.now()))
+    if (!remote) {
+      serviceError.value = serviceEnabled.value ? serviceConfigMessage : serviceOffMessage
       return false
-    await publish([id])
-    return true
+    }
+    try {
+      const forgot = await remote.forget(id, personaId, Date.now())
+      if (forgot)
+        await publish([id])
+      return forgot
+    }
+    catch (error) {
+      serviceError.value = publicServiceError(error)
+      entries.value = []
+      return false
+    }
   }
 
   async function resetState() {
     enabled.reset()
-    if (remote)
-      await remote.clear(Date.now()).catch(() => {})
+    if (remote) {
+      try {
+        await remote.clear(Date.now())
+      }
+      catch (error) {
+        serviceError.value = publicServiceError(error)
+      }
+    }
     serviceEnabled.reset()
     remote = undefined
-    await memoryRepo.clear()
+    entries.value = []
+    serviceError.value = serviceOffMessage
     await publish([])
   }
 
