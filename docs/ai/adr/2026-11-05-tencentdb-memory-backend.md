@@ -99,11 +99,17 @@ A derived line on the view is not an L1 atom and not a stored semantic relation.
 
 ### Graph page
 
-The whale picture is an approved direction. Mesh and fine shape are a later pass. `3d-force-graph` is the prototype renderer. It is not a measured performance choice. A later renderer swap must keep `MemoryFactProjection`.
+The whale picture is an approved direction. The mesh stays approximate. Fine shape is a later pass. This page uses `3d-force-graph` as its renderer. A later pull request can tune that scene. It does not replace the renderer.
 
-The page is a settings route, on the same pattern as `packages/stage-pages/src/pages/settings/modules/memory-long-term.vue`. It uses `layout: settings`. Web padding and scroll stay in `packages/stage-layouts/src/layouts/settings.vue`. Electron uses `apps/stage-tamagotchi/src/renderer/layouts/settings.vue`. The route and icon go in the layout that owns that app. The page does not cover the character stage (`DESIGN.md`).
+The page is a settings route, on the same pattern as `packages/stage-pages/src/pages/settings/modules/memory-long-term.vue`. It uses `layout: settings`. Web padding and scroll stay in `packages/stage-layouts/src/layouts/settings.vue`. Electron uses `apps/stage-tamagotchi/src/renderer/layouts/settings.vue`. The route is a link from the long-term memory page. The page does not cover the character stage (`DESIGN.md`).
 
-The page also shows the same facts as text. The existing memories list remains a reading path. Strings go in the English source under `packages/i18n` only. `DESIGN.md` says reduced motion is per control. Do not assume `3d-force-graph` honors `prefers-reduced-motion`. The page needs a paused or static state until that behavior is checked. Colors stay on the theme palette.
+The page reads the live list from `useMemoryStore`. That list is the MemoryCore read for the current team and user. When the service is off, or the read fails, the graph has no nodes and the page shows that status. The page does not read the device repository.
+
+The page also shows the same facts as text. Every drawn line is a derived layout line, and the page says so. The page does not write that line back to MemoryCore. It does not draw a recall pulse. Same-turn recall is a later pass.
+
+L0 facts are the service list. L1, L2, and L3 stay absent until a query for that layer returns rows. This page does not call those routes.
+
+Strings go in the English source under `packages/i18n` only. Reduced motion does not start `3d-force-graph`. The fact list stays on the page. Colors for the graph use the theme hue.
 
 ### Voice and video lifecycle
 
@@ -197,6 +203,7 @@ Facts are L0 messages in session `airi:facts`. The agent id is the card id, or `
 - Which concurrency rule wins when two devices write different text?
 - Do scene-origin facts stay visible on every session of the card?
 - Will MemoryCore add a client watch, or must the view poll?
-- What is the frame cost of `3d-force-graph`, and does it honor reduced motion?
+- What is the frame cost of `3d-force-graph` on a large fact list?
 - How is a video frame captured, given that chat attachments have no video type?
-- What is the whale mesh? Shape direction is approved. Geometry is not.
+- What is the whale mesh? Shape direction is approved. Geometry is approximate.
+- When does same-turn recall highlight a fact without drawing a fake pulse?

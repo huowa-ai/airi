@@ -140,6 +140,17 @@ export const useMemoryStore = defineStore('memory', () => {
     ].join('\n')
   }
 
+  /**
+   * The live MemoryCore facts for this team and user.
+   * Empty when the service is off, the read is still running, or the read failed.
+   * Callers must not replace this list with device facts or example facts.
+   */
+  function listFacts() {
+    if (serviceRead.value !== 'ready')
+      return NO_ENTRIES
+    return entries.value
+  }
+
   /** Reads an entry that the persona can see by its id: one of its own, or a general one. */
   function read(id: string, personaId: string) {
     return entries.value.find(entry => entry.id === id && (!entry.persona || entry.persona === personaId))
@@ -263,6 +274,7 @@ export const useMemoryStore = defineStore('memory', () => {
     serviceError,
     serviceRead,
     entries: computed(() => entries.value),
+    listFacts,
     ready,
     indexFor,
     read,
