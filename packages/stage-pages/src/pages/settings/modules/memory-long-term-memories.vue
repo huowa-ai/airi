@@ -3,7 +3,7 @@ import type { MemoryEntry } from '@proj-airi/stage-ui/types/memory'
 
 import { useMemoryStore } from '@proj-airi/stage-ui/stores/memory'
 import { useAiriCardStore } from '@proj-airi/stage-ui/stores/modules/airi-card'
-import { GhostButton } from '@proj-airi/ui'
+import { Alert, GhostButton } from '@proj-airi/ui'
 import { storeToRefs } from 'pinia'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -13,6 +13,7 @@ import { memorySearchKey } from './memory-long-term-memories.search'
 const { t } = useI18n()
 const memory = useMemoryStore()
 const { cards } = storeToRefs(useAiriCardStore())
+const { serviceRead, serviceError } = storeToRefs(memory)
 
 const KEY = 'settings.pages.modules.memory-long-term.memories'
 
@@ -41,6 +42,13 @@ function remove(entry: MemoryEntry) {
     <p :class="['text-sm', 'text-neutral-500 dark:text-neutral-400']">
       {{ t(`${KEY}.description`) }}
     </p>
+    <Alert v-if="serviceRead === 'off'" tone="warning" :title="t(`${KEY}.service-off-title`)">
+      {{ t(`${KEY}.service-off`) }}
+    </Alert>
+    <Alert v-else-if="serviceRead === 'error'" tone="danger" :title="t(`${KEY}.service-error-title`)">
+      {{ serviceError || t(`${KEY}.service-error`) }}
+    </Alert>
+    <Alert v-else-if="serviceRead === 'loading'" tone="info" :title="t(`${KEY}.loading`)" loading />
 
     <section
       v-for="group in groups"

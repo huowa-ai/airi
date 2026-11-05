@@ -3,10 +3,13 @@ import localforage from 'localforage'
 import { createPinia, disposePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { memoryRepo } from '../database/repos/memory.repo'
 import { useMemoryStore } from './memory'
+import { clearMemoryServiceSettings, createMemoryCoreFetch, enableMemoryService } from './memory-core-fake'
 
 const records = localforage.createInstance({ name: 'airi-memory', storeName: 'entries' })
 const stores: ReturnType<typeof createPinia>[] = []
+const gateway = createMemoryCoreFetch()
 
 /** Each store stands for one window. */
 function createStore() {
@@ -19,12 +22,10 @@ describe('memory store', () => {
   beforeEach(async () => {
     await records.clear()
     localStorage.removeItem('memory/entries')
-    localStorage.removeItem('memory/service-enabled')
-    localStorage.removeItem('memory/service-endpoint')
-    localStorage.removeItem('memory/service-team-id')
-    localStorage.removeItem('memory/service-user-id')
-    localStorage.removeItem('memory/service-api-key')
-    localStorage.removeItem('memory/service-id')
+    clearMemoryServiceSettings()
+    gateway.reset()
+    vi.stubGlobal('fetch', gateway.fetch)
+    enableMemoryService()
     // The entries are in the order of their changes, so each change gets its own time.
     let now = 1
     vi.spyOn(Date, 'now').mockImplementation(() => now++)
@@ -34,13 +35,9 @@ describe('memory store', () => {
     for (const pinia of stores.splice(0))
       disposePinia(pinia)
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
     localStorage.removeItem('memory/entries')
-    localStorage.removeItem('memory/service-enabled')
-    localStorage.removeItem('memory/service-endpoint')
-    localStorage.removeItem('memory/service-team-id')
-    localStorage.removeItem('memory/service-user-id')
-    localStorage.removeItem('memory/service-api-key')
-    localStorage.removeItem('memory/service-id')
+    clearMemoryServiceSettings()
     await records.clear()
   })
 
@@ -55,6 +52,7 @@ describe('memory store', () => {
     expect(memory.entries).toHaveLength(2)
     expect(memory.read(game.id, 'airi')?.body).toBe('Minecraft.')
     expect(memory.indexFor('airi')).toBe(`Your own:\n- ${other.id}: What the owner plays.\n- ${game.id}: What the owner plays now.`)
+    expect(memory.serviceRead).toBe('ready')
   })
 
   // A card keeps its own memories. Only the owner makes one general, and then every card reads it.
@@ -88,55 +86,105 @@ describe('memory store', () => {
     expect(await memory.write({ description: '', body: ' ' }, 'airi')).toBeUndefined()
   })
 
-  // A run writes in the chat window while the owner changes the same entry in Settings.
-  it('never undoes a removal or a make-general from a window that has not read it yet', async () => {
+  it('shows a service change in every window', async () => {
     const chat = createStore()
     const settings = createStore()
     const nickname = (await chat.write({ description: 'What the owner likes to be called.', body: 'Yumeka.' }, 'airi'))!
     const tone = (await chat.write({ description: 'How to answer.', body: 'Calm.' }, 'airi'))!
     await vi.waitFor(() => expect(settings.entries).toHaveLength(2))
 
-    await Promise.all([
-      settings.remove(nickname),
-      settings.makeGeneral(tone),
-      chat.write({ id: nickname.id, description: 'What the owner likes to be called.', body: 'Yume.' }, 'airi'),
-      chat.write({ id: tone.id, description: 'How to answer.', body: 'Short sentences.' }, 'airi'),
-    ])
+    await settings.remove(nickname)
+    await settings.makeGeneral(tone)
 
-    await vi.waitFor(() => expect(settings.entries).toHaveLength(3))
-    expect(await records.getItem(nickname.id)).toEqual({ id: nickname.id, updatedAt: expect.any(Number), deleted: true })
-    expect(settings.entries.find(entry => entry.id === tone.id)?.persona).toBeUndefined()
+    await vi.waitFor(() => expect(chat.entries.find(entry => entry.id === nickname.id)).toBeUndefined())
+    expect(chat.entries.find(entry => entry.id === tone.id)?.persona).toBeUndefined()
+    expect(settings.entries).toHaveLength(1)
   })
 
-  it('keeps the entries across restarts and shows a change in every window', async () => {
+  it('keeps the service entries across restarts of the store', async () => {
     const chat = createStore()
-    const settings = createStore()
     const nickname = (await chat.write({ description: 'What the owner likes to be called.', body: 'Yumeka.' }, 'airi'))!
 
-    await vi.waitFor(() => expect(settings.read(nickname.id, 'airi')?.body).toBe('Yumeka.'))
     const restarted = createStore()
-    await vi.waitFor(() => expect(restarted.read(nickname.id, 'airi')?.body).toBe('Yumeka.'))
+    await restarted.ready()
 
-    await settings.remove(nickname)
-
-    await vi.waitFor(() => expect(chat.entries).toEqual([]))
-    // The removal stays as a tombstone.
-    expect(await records.getItem(nickname.id)).toEqual({ id: nickname.id, updatedAt: expect.any(Number), deleted: true })
+    expect(restarted.read(nickname.id, 'airi')?.body).toBe('Yumeka.')
   })
 
-  it('moves the entries from localStorage once, with new ids, before it is ready', async () => {
-    localStorage.setItem('memory/entries', JSON.stringify([
-      { name: 'nickname', description: 'What the owner likes to be called.', body: 'Yumeka.', persona: 'airi', updatedAt: 10 },
-      { name: 'tone', description: 'How to answer.', body: 'Calm.', updatedAt: 20 },
-    ]))
+  it('does not read or write the device repository', async () => {
+    const list = vi.spyOn(memoryRepo, 'list')
+    const write = vi.spyOn(memoryRepo, 'write')
+    await memoryRepo.add([{ id: 'device-fact', description: 'Device only', body: 'Porridge on this device.', updatedAt: 1 }])
+    const memory = createStore()
+    await memory.write({ description: 'Drink', body: 'Ada likes tea.' }, 'airi')
 
+    expect(memory.entries.map(entry => entry.body)).toEqual(['Ada likes tea.'])
+    expect(memory.entries.map(entry => entry.body)).not.toContain('Porridge on this device.')
+    expect(list).not.toHaveBeenCalled()
+    expect(write).not.toHaveBeenCalled()
+    expect((await memoryRepo.list()).map(entry => entry.id)).toEqual(['device-fact'])
+  })
+
+  it('stays empty when the service is off', async () => {
+    clearMemoryServiceSettings()
+    await memoryRepo.add([{ id: 'device-fact', description: 'Device only', body: 'Porridge on this device.', updatedAt: 1 }])
     const memory = createStore()
     await memory.ready()
 
-    expect(memory.entries).toEqual([
-      { id: expect.any(String), description: 'What the owner likes to be called.', body: 'Yumeka.', persona: 'airi', updatedAt: 10 },
-      { id: expect.any(String), description: 'How to answer.', body: 'Calm.', persona: undefined, updatedAt: 20 },
-    ])
-    expect(localStorage.getItem('memory/entries')).toBeNull()
+    expect(memory.serviceRead).toBe('off')
+    expect(memory.entries).toEqual([])
+    expect(await memory.write({ description: 'Drink', body: 'Ada likes tea.' }, 'airi')).toBeUndefined()
+    expect(memory.entries).toEqual([])
+    expect((await memoryRepo.list()).map(entry => entry.body)).toEqual(['Porridge on this device.'])
+  })
+
+  it('stays empty when the service read fails and does not use device facts', async () => {
+    gateway.fail('MemoryCore request failed.')
+    await memoryRepo.add([{ id: 'device-fact', description: 'Device only', body: 'Porridge on this device.', updatedAt: 1 }])
+    const memory = createStore()
+    await memory.ready()
+
+    expect(memory.serviceRead).toBe('error')
+    expect(memory.serviceError).toBe('MemoryCore request failed.')
+    expect(memory.entries).toEqual([])
+    expect(memory.serviceError).not.toContain('127.0.0.1')
+  })
+
+  it('keeps one user list away from another user', async () => {
+    const owner = createStore()
+    await owner.write({ description: 'Drink', body: 'Ada likes tea.' }, 'airi')
+    enableMemoryService('user-2')
+    const other = createStore()
+    await other.ready()
+
+    expect(other.entries).toEqual([])
+    expect(owner.entries.map(entry => entry.body)).toEqual(['Ada likes tea.'])
+  })
+
+  it('drops service facts when data reset runs, and does not load legacy local storage', async () => {
+    localStorage.setItem('memory/entries', JSON.stringify([
+      { name: 'nickname', description: 'What the owner likes to be called.', body: 'Yumeka.', persona: 'airi', updatedAt: 10 },
+    ]))
+    const memory = createStore()
+    await memory.write({ description: 'Drink', body: 'Ada likes tea.' }, 'airi')
+    expect(memory.entries.map(entry => entry.body)).toEqual(['Ada likes tea.'])
+    expect(localStorage.getItem('memory/entries')).not.toBeNull()
+
+    await memory.resetState()
+    enableMemoryService()
+    memory.serviceEnabled = true
+    await vi.waitFor(() => expect(memory.serviceRead).toBe('ready'))
+
+    expect(memory.entries).toEqual([])
+  })
+
+  it('reports an error when the service settings are incomplete', async () => {
+    localStorage.removeItem('memory/service-team-id')
+    const memory = createStore()
+    await memory.ready()
+
+    expect(memory.serviceRead).toBe('error')
+    expect(memory.serviceError).toBe('Set the service address, the team id, and the user id.')
+    expect(memory.entries).toEqual([])
   })
 })

@@ -13,6 +13,7 @@ import { injectKeyPiniaSynced } from '../libs/pinia/synced-context'
 import { toStoredVoiceprint } from '../libs/voice/voiceprint'
 import { useDisplayModelsStore } from '../stores/display-models'
 import { useMemoryStore } from '../stores/memory'
+import { createMemoryCoreFetch, enableMemoryService } from '../stores/memory-core-fake'
 import { useModsServerChannelStore } from '../stores/mods/api/channel-server'
 import { useAiriCardStore } from '../stores/modules/airi-card'
 import { useConsciousnessStore } from '../stores/modules/consciousness'
@@ -318,12 +319,20 @@ it.each(['resetSettings', 'resetState'])('continues independent module resets wh
 // ROOT CAUSE:
 // Deleting all data kept long-term memories and recipes, so the character still knew facts about the owner.
 it('forgets what the character learned when modules reset', async () => {
-  vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => Response.json({ voices: [], models: [] })))
+  const gateway = createMemoryCoreFetch()
+  vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (input, init) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+    if (url.includes('/v3/conversation/'))
+      return gateway.fetch(input, init)
+    return Response.json({ voices: [], models: [] })
+  }))
+  enableMemoryService()
   const { pinia, runtime, maintenance } = mountMaintenance(`maintenance:${crypto.randomUUID()}`, 'leader-only')
   await vi.waitFor(() => expect(runtime.isLeader()).toBe(true))
   const memory = useMemoryStore(pinia)
   const recipes = useRecipesStore(pinia)
   await memory.write({ description: 'What the owner likes to be called.', body: 'Yumeka.' }, 'default')
+  expect(memory.entries).toHaveLength(1)
   await recipes.add({ name: 'Check in', description: '', instructions: 'Greet softly.', keywords: [], enabled: true })
 
   await maintenance.resetModulesSettings()

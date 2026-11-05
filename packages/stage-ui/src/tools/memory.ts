@@ -77,8 +77,12 @@ export async function createMemoryTools(options: CreateMemoryToolsOptions): Prom
           return 'Memory not saved: each entry needs an id or null, and a body.'
         const lines: string[] = []
         for (const input of parsed.output.entries) {
+          if (!input.body.trim()) {
+            lines.push('Memory not saved: it needs a body.')
+            continue
+          }
           const entry = await options.write({ id: input.id ?? undefined, description: input.description, body: input.body })
-          lines.push(entry ? `Saved memory "${entry.id}".` : 'Memory not saved: it needs a body.')
+          lines.push(entry ? `Saved memory "${entry.id}".` : 'Memory not saved.')
         }
         return lines.join('\n')
       },

@@ -500,6 +500,19 @@
       status: preferred
       context: Long-term memory specific settings and management
 
+- id: memory-service
+  subject: memory
+  translatable: true
+  definition: The remote store that keeps long-term memory for one team and one user.
+  note: >
+    Do not call the memories kept only on the device a memory service. The live list
+    comes from this service.
+  terms:
+    - text: Memory service
+      part-of-speech: noun
+      status: preferred
+      context: The memory service is the long-term memory for this character.
+
 - id: short-term-memory
   subject: memory
   translatable: true

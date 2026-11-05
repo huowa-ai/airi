@@ -20,7 +20,7 @@ A graph view and voice or video capture come after this package. This pull reque
 
 `useMemoryStore` stays the only writer API for tools and Settings. Those callers do not import MemoryCore.
 
-The store will call `MemoryStorage` in `@proj-airi/tencentdb-memory`. That package does not import `stage-ui`. The UI will depend on this package. The reverse dependency is not allowed.
+The store calls `MemoryStorage` in `@proj-airi/tencentdb-memory`. That package does not import `stage-ui`. The UI depends on this package. The reverse dependency is not allowed. The live store does not call the device repository. The file `packages/stage-ui/src/database/repos/memory.repo.ts` stays in the repository. A later change can remove it. An offline outbox is still a later stage. It is not a silent read of that file.
 
 `MemoryStorage` is the only write port. Its MemoryCore implementation is the only remote writer. `memory-pgvector` stays unconnected. Do not start it as a memory writer.
 
@@ -43,9 +43,7 @@ The solid arrows are the target direction. The voice arrow is a later hook, not 
 
 ### Stage store seam
 
-Delegation cannot land with zero `stage-ui` edits. The store calls `memoryRepo` directly. The tools import `MemoryEntry` from `packages/stage-ui/src/types/memory.ts`. Settings pages read the store. The delegation pull request must change those call sites and their tests.
-
-This pull request does not edit `stage-ui`. Proof of the current seam is the import of `memoryRepo` in `memory.ts` and the tool schemas in `tools/memory.ts`.
+Delegation landed in `stage-ui`. Tools and Settings call `useMemoryStore`. The store calls `MemoryStorage`. It does not import `memoryRepo`. The device repository file remains, and the live path does not call it.
 
 The tool schema is narrower than a gateway record. `description` is at most 150 characters. `body` is 1 to 2000 characters. A new tool id is null. MemoryCore L0 and L1 content limits in the reviewed catalog are 8192 characters. The adapter must not treat those limits as one number. The model tool also has no session, turn, or asset fields. The host attaches provenance from the run. The model does not.
 
@@ -53,7 +51,7 @@ There is no memory CRUD event in `packages/plugin-protocol/src/types/events.ts`.
 
 ### One writer
 
-Tools, Settings, and a later voice hook call `useMemoryStore`. The store calls one `MemoryStorage`. When the remote adapter exists, that adapter is the only code that writes MemoryCore. IndexedDB remains the device copy until delegation. After delegation it is a cache and, only in the offline stage, an outbox. It is not a second authority.
+Tools, Settings, and a later voice hook call `useMemoryStore`. The store calls one `MemoryStorage`. That adapter is the only code that writes MemoryCore. The device repository is not a second authority, a cache, or an outbox. An offline outbox is a later stage. It needs its own rule before any code reads the device file again.
 
 `context:update` adds short prompt context. It is not a second fact store. `spark` `memory-recall` is a command kind in `packages/core-agent`. It is not a write to this store.
 
@@ -184,7 +182,9 @@ L1 routes are not called. The reviewed catalog lists `atomic/update`, `atomic/qu
 
 ## Service mode
 
-The settings page can turn the memory service on. The character then reads and writes only MemoryCore. Device memories stay on the device and are not copied into the prompt. When the service is off, the character uses only the device store. A failed service read shows an error and an empty index. It does not fall back to the device store.
+The live memory path is MemoryCore only. `useMemoryStore` reads and writes that service for one team id and one user id. It does not call the device repository. When the service is off, the live list is empty. When the address, the team id, or the user id is missing, the list is empty and the store reports an error. A failed read does the same. The store does not fill the list from device facts.
+
+The settings page can turn the memory service on. When the service is on, the character reads and writes only MemoryCore. Memories that remain only on the device stay out of the prompt and out of Settings.
 
 The page calls MemoryCore over HTTP. The address, the team id, the user id, the service id, and the optional API key are device settings. The key is not in the source bundle. A later channel RPC can move the key off the page. That move is still open.
 

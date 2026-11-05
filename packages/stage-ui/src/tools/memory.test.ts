@@ -43,6 +43,15 @@ describe('memory tools', () => {
     expect(item.additionalProperties).toBe(false)
   })
 
+  it('does not claim a missing body when the store saves nothing', async () => {
+    const bound = options()
+    bound.write.mockResolvedValue(undefined as never)
+    const tools = await createMemoryTools(bound)
+    const write = tools[1]
+
+    expect(await write!.execute({ entries: [{ id: null, description: 'Tea', body: 'Ada likes tea' }] }, { messages: [], toolCallId: 'call' })).toBe('Memory not saved.')
+  })
+
   it('asks for few, plain writes and shows the index', () => {
     expect(composeMemoryPrompt('General:\n- nickname-id: d')).toContain('Memory index:\nGeneral:\n- nickname-id: d')
     expect(composeMemoryPrompt('')).toContain('An index line that already states the fact needs no read.')

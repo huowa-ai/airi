@@ -32,6 +32,7 @@ import { useChatStore } from './chat'
 import { CHAT_FORMAT_RULES } from './chat/prompt-recipe'
 import { useContextObservabilityStore } from './devtools/context-observability'
 import { useMemoryStore } from './memory'
+import { clearMemoryServiceSettings, createMemoryCoreFetch } from './memory-core-fake'
 import { useConsciousnessSettingsStore } from './modules/consciousness-settings'
 import { useRecipesStore } from './recipes'
 
@@ -292,8 +293,32 @@ function storedToolImageMessage(): ChatHistoryItem {
   }
 }
 
+function ensureLocalStorage() {
+  if (typeof localStorage !== 'undefined')
+    return
+  const values = new Map<string, string>()
+  vi.stubGlobal('localStorage', {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      values.set(key, value)
+    },
+    removeItem: (key: string) => {
+      values.delete(key)
+    },
+    clear: () => {
+      values.clear()
+    },
+    key: (index: number) => [...values.keys()][index] ?? null,
+    get length() {
+      return values.size
+    },
+  })
+}
+
 describe('chat store contract', () => {
   beforeEach(async () => {
+    ensureLocalStorage()
+    clearMemoryServiceSettings()
     await memoryRepo.clear()
     await recipesRepo.clear()
     cardPrompt.value = 'system prompt'
@@ -667,6 +692,9 @@ describe('chat store contract', () => {
 
   // A scene belongs to a persona. Its run reads general memories and its persona's own, and cannot save recipes.
   it('gives a scene run its card memories, the general ones, and no recipe proposals', async () => {
+    const gateway = createMemoryCoreFetch()
+    const previousFetch = globalThis.fetch
+    vi.stubGlobal('fetch', gateway.fetch)
     sessionMetas['scene-session'] = { sessionId: 'scene-session', userId: 'local', characterId: 'discord-host', bindings: ['discord:channel:a'], createdAt: 1, updatedAt: 1 }
     const toolNames: string[][] = []
     let prompt = ''
@@ -677,25 +705,35 @@ describe('chat store contract', () => {
       await options.onStreamEvent({ type: 'finish' })
     })
     const memory = useMemoryStore()
-    const nickname = (await memory.write({ description: 'What the owner likes to be called.', body: 'Yumeka.' }, 'default'))!
-    await memory.makeGeneral(nickname)
-    const rules = (await memory.write({ description: 'Rules of this channel.', body: 'No spoilers.' }, 'discord-host'))!
-    await memory.write({ description: 'How the focus card answers.', body: 'Next step first.' }, 'focus')
+    memory.serviceEndpoint = 'http://127.0.0.1:8420'
+    memory.serviceTeamId = 'team-1'
+    memory.serviceUserId = 'user-1'
+    memory.serviceEnabled = true
+    await memory.ready()
+    try {
+      const nickname = (await memory.write({ description: 'What the owner likes to be called.', body: 'Yumeka.' }, 'default'))!
+      await memory.makeGeneral(nickname)
+      const rules = (await memory.write({ description: 'Rules of this channel.', body: 'No spoilers.' }, 'discord-host'))!
+      await memory.write({ description: 'How the focus card answers.', body: 'Next step first.' }, 'focus')
 
-    await useChatStore().send({ sessionId: 'scene-session', text: 'save a recipe for me' })
+      await useChatStore().send({ sessionId: 'scene-session', text: 'save a recipe for me' })
 
-    expect(toolNames[0]).not.toContain('builtIn_proposeRecipe')
-    expect(toolNames[0]).toContain('builtIn_writeMemory')
-    expect(prompt).toContain(`- ${rules.id}: Rules of this channel.`)
-    expect(prompt).toContain(`- ${nickname.id}: What the owner likes to be called.`)
-    expect(prompt).not.toContain('How the focus card answers.')
+      expect(toolNames[0]).not.toContain('builtIn_proposeRecipe')
+      expect(toolNames[0]).toContain('builtIn_writeMemory')
+      expect(prompt).toContain(`- ${rules.id}: Rules of this channel.`)
+      expect(prompt).toContain(`- ${nickname.id}: What the owner likes to be called.`)
+      expect(prompt).not.toContain('How the focus card answers.')
 
-    // With long-term memory off, no memory tool or index reaches the run.
-    memory.enabled = false
-    await useChatStore().send({ sessionId: 'scene-session', text: 'hello again' })
+      // With long-term memory off, no memory tool or index reaches the run.
+      memory.enabled = false
+      await useChatStore().send({ sessionId: 'scene-session', text: 'hello again' })
 
-    expect(toolNames[1]).not.toContain('builtIn_writeMemory')
-    expect(prompt).not.toContain('Rules of this channel.')
+      expect(toolNames[1]).not.toContain('builtIn_writeMemory')
+      expect(prompt).not.toContain('Rules of this channel.')
+    }
+    finally {
+      vi.stubGlobal('fetch', previousFetch)
+    }
   })
 
   it('preserves image attachments when retrying a failed turn', async () => {
