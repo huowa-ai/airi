@@ -1,18 +1,65 @@
 <script setup lang="ts">
 import { useMemoryStore } from '@proj-airi/stage-ui/stores/memory'
-import { FieldCheckbox } from '@proj-airi/ui'
+import { FieldCheckbox, FieldInput } from '@proj-airi/ui'
 import { storeToRefs } from 'pinia'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
 
 const { t } = useI18n()
-const { enabled } = storeToRefs(useMemoryStore())
+const {
+  enabled,
+  serviceEnabled,
+  serviceEndpoint,
+  serviceTeamId,
+  serviceUserId,
+  serviceApiKey,
+  serviceId,
+  serviceError,
+} = storeToRefs(useMemoryStore())
 </script>
 
 <template>
   <div :class="['flex flex-col', 'gap-4']">
     <div :class="['rounded-xl', 'bg-neutral-100 dark:bg-neutral-900', 'p-4']">
       <FieldCheckbox v-model="enabled" :label="t('settings.pages.modules.memory-long-term.enable')" :description="t('settings.pages.modules.memory-long-term.enable-description')" />
+    </div>
+    <div :class="['rounded-xl', 'bg-neutral-100 dark:bg-neutral-900', 'p-4', 'flex flex-col', 'gap-4']">
+      <FieldCheckbox
+        v-model="serviceEnabled"
+        :label="t('settings.pages.modules.memory-long-term.service.enable')"
+        :description="t('settings.pages.modules.memory-long-term.service.enable-description')"
+      />
+      <FieldInput
+        v-model="serviceEndpoint"
+        :label="t('settings.pages.modules.memory-long-term.service.endpoint')"
+        :description="t('settings.pages.modules.memory-long-term.service.endpoint-description')"
+        placeholder="http://127.0.0.1:8420"
+      />
+      <FieldInput
+        v-model="serviceTeamId"
+        :label="t('settings.pages.modules.memory-long-term.service.team')"
+        :description="t('settings.pages.modules.memory-long-term.service.team-description')"
+      />
+      <FieldInput
+        v-model="serviceUserId"
+        :label="t('settings.pages.modules.memory-long-term.service.user')"
+        :description="t('settings.pages.modules.memory-long-term.service.user-description')"
+      />
+      <FieldInput
+        v-model="serviceId"
+        :label="t('settings.pages.modules.memory-long-term.service.service-id')"
+        :description="t('settings.pages.modules.memory-long-term.service.service-id-description')"
+      />
+      <FieldInput
+        v-model="serviceApiKey"
+        type="password"
+        autocomplete="off"
+        :label="t('settings.pages.modules.memory-long-term.service.key')"
+        :description="t('settings.pages.modules.memory-long-term.service.key-description')"
+      />
+      <p v-if="serviceError" :class="['text-sm', 'text-red-600 dark:text-red-400']">
+        {{ serviceError }}
+      </p>
     </div>
     <RouterLink
       to="/settings/modules/memory-long-term-recipes"

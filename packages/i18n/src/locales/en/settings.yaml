@@ -1106,6 +1106,19 @@ pages:
       description: Long-term memory specific settings and management
       enable: Use long-term memory
       enable-description: The character remembers what you talk about. When this is off, it remembers nothing.
+      service:
+        enable: Use the memory service
+        enable-description: When this is on, the character reads and writes only the memory service. Memories on this device stay here and are not copied. When this is off, the character uses only this device.
+        endpoint: Service address
+        endpoint-description: An http or https origin, such as http://127.0.0.1:8420. Do not put a key in the address.
+        team: Team id
+        team-description: The same team id on every app that shares this service.
+        user: User id
+        user-description: The same user id on every app that shares this service.
+        key: API key
+        key-description: Optional. Leave this empty when the local service does not ask for a key. The key stays on this device.
+        service-id: Service id
+        service-id-description: Optional. Send this when the service asks for x-tdai-service-id. It is not a key.
       memories:
         title: Memories
         description: Each character keeps its own secrets, and the others cannot see them. After you share a secret, every character knows it, and you cannot take it back. You can delete any secret, but you cannot rewrite one.

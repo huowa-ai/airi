@@ -17,6 +17,8 @@ import {
 
 const addPath = '/v3/conversation/add'
 const searchPath = '/v3/conversation/search'
+const queryPath = '/v3/conversation/query'
+const deletePath = '/v3/conversation/delete'
 
 export interface ConversationMessageInput {
   role: 'user' | 'assistant'
@@ -60,6 +62,28 @@ export interface SearchConversationResult {
   messages: ConversationHit[]
 }
 
+export interface QueryConversationInput {
+  sessionId?: string
+  agentId?: string
+  limit?: number
+  offset?: number
+}
+
+export interface QueryConversationResult {
+  messages: ConversationHit[]
+  total: number
+}
+
+export interface DeleteConversationInput {
+  messageIds?: string[]
+  sessionIds?: string[]
+  agentId?: string
+}
+
+export interface DeleteConversationResult {
+  deletedCount: number
+}
+
 /**
  * L0 calls on a MemoryCore v3 gateway.
  * The client sends `team_id`, `agent_id`, and `user_id` on every call.
@@ -67,6 +91,8 @@ export interface SearchConversationResult {
 export interface MemoryV3Client {
   addConversation: (input: AddConversationInput) => Promise<AddConversationResult>
   searchConversation: (input: SearchConversationInput) => Promise<SearchConversationResult>
+  queryConversation: (input: QueryConversationInput) => Promise<QueryConversationResult>
+  deleteConversation: (input: DeleteConversationInput) => Promise<DeleteConversationResult>
 }
 
 export interface MemoryV3ClientOptions {
@@ -104,7 +130,8 @@ const addDataSchema = object({
 
 const hitSchema = object({
   id: string(),
-  version: union([string(), number()]),
+  // The reviewed catalog includes version. This local gateway omits it on L0 query.
+  version: optional(union([string(), number()])),
   role: picklist(['user', 'assistant']),
   content: string(),
   score: optional(number()),
@@ -116,6 +143,15 @@ const hitSchema = object({
 
 const searchDataSchema = object({
   messages: array(hitSchema),
+})
+
+const queryDataSchema = object({
+  messages: array(hitSchema),
+  total: number(),
+})
+
+const deleteDataSchema = object({
+  deleted_count: number(),
 })
 
 /**
@@ -167,19 +203,73 @@ export function createMemoryClient(config: MemoryClientConfig, options: MemoryV3
         ...(input.limit === undefined ? {} : { limit: input.limit }),
         ...(input.sessionId === undefined ? {} : { session_id: input.sessionId }),
       }, searchDataSchema, data => ({
-        messages: data.messages.map(message => ({
-          id: message.id,
-          version: message.version,
-          role: message.role,
-          content: message.content,
-          ...(message.score === undefined ? {} : { score: message.score }),
-          ...(message.session_id === undefined ? {} : { sessionId: message.session_id }),
-          ...(message.team_id === undefined ? {} : { teamId: message.team_id }),
-          ...(message.user_id === undefined ? {} : { userId: message.user_id }),
-          ...(message.agent_id === undefined ? {} : { agentId: message.agent_id }),
-        })),
+        messages: data.messages.map(mapHit),
       }))
     },
+
+    async queryConversation(input) {
+      const agentId = input.agentId ?? config.agentId
+      assertAgentId(queryPath, agentId)
+      assertLimit(input.limit)
+      assertOffset(input.offset)
+      if (input.sessionId !== undefined)
+        assertSessionId(queryPath, input.sessionId)
+
+      return post(fetchImpl, config, secrets, timeoutMs, queryPath, {
+        team_id: config.teamId,
+        agent_id: agentId,
+        user_id: config.userId,
+        ...(input.sessionId === undefined ? {} : { session_id: input.sessionId }),
+        ...(input.limit === undefined ? {} : { limit: input.limit }),
+        ...(input.offset === undefined ? {} : { offset: input.offset }),
+      }, queryDataSchema, data => ({
+        messages: data.messages.map(mapHit),
+        total: data.total,
+      }))
+    },
+
+    async deleteConversation(input) {
+      const agentId = input.agentId ?? config.agentId
+      assertAgentId(deletePath, agentId)
+      const messageIds = input.messageIds ?? []
+      const sessionIds = input.sessionIds ?? []
+      if (messageIds.length === 0 && sessionIds.length === 0)
+        rejectInput(deletePath, 'Delete needs message ids or session ids.')
+
+      return post(fetchImpl, config, secrets, timeoutMs, deletePath, {
+        team_id: config.teamId,
+        agent_id: agentId,
+        user_id: config.userId,
+        ...(messageIds.length === 0 ? {} : { message_ids: messageIds }),
+        ...(sessionIds.length === 0 ? {} : { session_ids: sessionIds }),
+      }, deleteDataSchema, data => ({
+        deletedCount: data.deleted_count,
+      }))
+    },
+  }
+}
+
+function mapHit(message: {
+  id: string
+  version?: string | number
+  role: 'user' | 'assistant'
+  content: string
+  score?: number
+  session_id?: string
+  team_id?: string
+  user_id?: string
+  agent_id?: string
+}): ConversationHit {
+  return {
+    id: message.id,
+    version: message.version ?? 0,
+    role: message.role,
+    content: message.content,
+    ...(message.score === undefined ? {} : { score: message.score }),
+    ...(message.session_id === undefined ? {} : { sessionId: message.session_id }),
+    ...(message.team_id === undefined ? {} : { teamId: message.team_id }),
+    ...(message.user_id === undefined ? {} : { userId: message.user_id }),
+    ...(message.agent_id === undefined ? {} : { agentId: message.agent_id }),
   }
 }
 
@@ -334,4 +424,11 @@ function assertLimit(limit: number | undefined) {
     return
   if (!Number.isInteger(limit) || limit < 1 || limit > 100)
     rejectInput(searchPath, 'Search limit must be an integer from 1 to 100.')
+}
+
+function assertOffset(offset: number | undefined) {
+  if (offset === undefined)
+    return
+  if (!Number.isInteger(offset) || offset < 0)
+    rejectInput(queryPath, 'Query offset must be a non-negative integer.')
 }

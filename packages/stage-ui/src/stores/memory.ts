@@ -1,7 +1,10 @@
+import type { MemoryStorage } from '@proj-airi/tencentdb-memory'
+
 import type { MemoryEntry, MemoryWrite } from '../types/memory'
 
 import { errorMessageFrom } from '@moeru/std'
 import { useLocalStorageManualReset } from '@proj-airi/stage-shared/composables'
+import { createMemoryClient, createRemoteMemoryStorage, GENERAL_AGENT_ID, memoryClientEnv, readMemoryClientConfig } from '@proj-airi/tencentdb-memory'
 import { useBroadcastChannel } from '@vueuse/core'
 import { defineStore } from 'pinia'
 import { v7 as uuidv7 } from 'uuid'
@@ -12,9 +15,9 @@ import { memoryRepo } from '../database/repos/memory.repo'
 const LEGACY_ENTRIES_STORAGE_KEY = 'memory/entries'
 
 // NOTICE:
-// Up to v0.13.1 the entries were in localStorage under `memory/entries`, keyed by a name that the model chose.
-// localStorage holds a few megabytes, and two facts could share a name. IndexedDB keeps the entries now, with store-made ids.
-// Move them once. The lock keeps two windows that start together from moving them twice.
+// v0.13.1 kept entries in localStorage under `memory/entries`, keyed by a model-chosen name.
+// Two facts could share a name. IndexedDB stores them now, with store-made ids.
+// The lock stops two windows that start together from moving the same entries twice.
 // Removal condition: two releases after the release that moves them.
 async function moveLegacyEntries() {
   if (!globalThis.localStorage?.getItem(LEGACY_ENTRIES_STORAGE_KEY))
@@ -45,7 +48,40 @@ async function moveLegacyEntries() {
  */
 export const useMemoryStore = defineStore('memory', () => {
   const enabled = useLocalStorageManualReset<boolean>('memory/enabled', true)
+  const serviceEnabled = useLocalStorageManualReset<boolean>('memory/service-enabled', false)
+  const serviceEndpoint = useLocalStorageManualReset('memory/service-endpoint', '')
+  const serviceTeamId = useLocalStorageManualReset('memory/service-team-id', '')
+  const serviceUserId = useLocalStorageManualReset('memory/service-user-id', '')
+  const serviceApiKey = useLocalStorageManualReset('memory/service-api-key', '')
+  const serviceId = useLocalStorageManualReset('memory/service-id', '')
+  const serviceError = ref('')
   const entries = ref<MemoryEntry[]>([])
+  let remote: MemoryStorage | undefined
+
+  function connectService() {
+    if (!serviceEnabled.value) {
+      remote = undefined
+      serviceError.value = ''
+      return
+    }
+
+    const config = readMemoryClientConfig({
+      [memoryClientEnv.endpoint]: serviceEndpoint.value,
+      [memoryClientEnv.teamId]: serviceTeamId.value,
+      [memoryClientEnv.userId]: serviceUserId.value,
+      [memoryClientEnv.agentId]: GENERAL_AGENT_ID,
+      [memoryClientEnv.apiKey]: serviceApiKey.value,
+      [memoryClientEnv.serviceId]: serviceId.value,
+    })
+    if (!config.configured) {
+      remote = undefined
+      serviceError.value = 'Set the service address, the team id, and the user id.'
+      return
+    }
+
+    remote = createRemoteMemoryStorage(createMemoryClient(config.config))
+    serviceError.value = ''
+  }
   const { data: changed, post } = useBroadcastChannel<string[], string[]>({ name: 'airi:memory' })
   let pendingLoad = moveLegacyEntries()
     .catch(error => console.warn('[memory] Failed to move the entries from localStorage:', errorMessageFrom(error)))
@@ -53,7 +89,22 @@ export const useMemoryStore = defineStore('memory', () => {
   /** Reads the entries again, after the reads that started before. */
   function load() {
     pendingLoad = pendingLoad.catch(() => {}).then(async () => {
-      entries.value = await memoryRepo.list()
+      if (!serviceEnabled.value) {
+        entries.value = await memoryRepo.list()
+        return
+      }
+      if (!remote) {
+        entries.value = []
+        return
+      }
+      try {
+        entries.value = await remote.list()
+        serviceError.value = ''
+      }
+      catch (error) {
+        entries.value = []
+        serviceError.value = publicServiceError(error)
+      }
     })
     return pendingLoad
   }
@@ -99,6 +150,27 @@ export const useMemoryStore = defineStore('memory', () => {
     const body = input.body.trim()
     if (!body)
       return undefined
+    if (serviceEnabled.value) {
+      if (!remote) {
+        serviceError.value = 'Set the service address, the team id, and the user id.'
+        return undefined
+      }
+      try {
+        const result = await remote.write({ id: input.id, description: input.description.trim(), body }, personaId, Date.now())
+        if (result.outcome === 'empty')
+          return undefined
+        if (result.outcome !== 'saved' && result.outcome !== 'unchanged') {
+          await publish([])
+          return undefined
+        }
+        await publish([result.entry.id])
+        return result.entry
+      }
+      catch (error) {
+        serviceError.value = publicServiceError(error)
+        return undefined
+      }
+    }
     const entry = await memoryRepo.write({ id: input.id, description: input.description.trim(), body }, personaId, Date.now())
     await publish([entry.id])
     return entry
@@ -106,18 +178,57 @@ export const useMemoryStore = defineStore('memory', () => {
 
   /** Makes a card's memory general, so every card reads it. */
   async function makeGeneral(entry: Pick<MemoryEntry, 'id'>) {
+    if (serviceEnabled.value) {
+      if (!remote)
+        return
+      try {
+        const result = await remote.makeGeneral(entry.id, Date.now())
+        if (result.outcome === 'saved')
+          await publish([entry.id])
+      }
+      catch (error) {
+        serviceError.value = publicServiceError(error)
+      }
+      return
+    }
     if (await memoryRepo.makeGeneral(entry.id, Date.now()))
       await publish([entry.id])
   }
 
   /** Removes one entry from Settings. */
   async function remove(entry: Pick<MemoryEntry, 'id'>) {
+    if (serviceEnabled.value) {
+      if (!remote)
+        return
+      try {
+        await remote.remove([entry.id], Date.now())
+        await publish([entry.id])
+      }
+      catch (error) {
+        serviceError.value = publicServiceError(error)
+      }
+      return
+    }
     await memoryRepo.remove([entry.id], Date.now())
     await publish([entry.id])
   }
 
   /** Forgets an entry of the card by its id. General memories belong to the owner, so a run cannot forget them. */
   async function forget(id: string, personaId: string) {
+    if (serviceEnabled.value) {
+      if (!remote)
+        return false
+      try {
+        const forgot = await remote.forget(id, personaId, Date.now())
+        if (forgot)
+          await publish([id])
+        return forgot
+      }
+      catch (error) {
+        serviceError.value = publicServiceError(error)
+        return false
+      }
+    }
     if (!await memoryRepo.forget(id, personaId, Date.now()))
       return false
     await publish([id])
@@ -126,6 +237,10 @@ export const useMemoryStore = defineStore('memory', () => {
 
   async function resetState() {
     enabled.reset()
+    if (remote)
+      await remote.clear(Date.now()).catch(() => {})
+    serviceEnabled.reset()
+    remote = undefined
     await memoryRepo.clear()
     await publish([])
   }
@@ -134,10 +249,22 @@ export const useMemoryStore = defineStore('memory', () => {
     void load().catch(error => console.warn('[memory] Failed to read the entries:', errorMessageFrom(error)))
   }
   watch(changed, reload)
+  watch([serviceEnabled, serviceEndpoint, serviceTeamId, serviceUserId, serviceApiKey, serviceId], () => {
+    connectService()
+    reload()
+  })
+  connectService()
   reload()
 
   return {
     enabled,
+    serviceEnabled,
+    serviceEndpoint,
+    serviceTeamId,
+    serviceUserId,
+    serviceApiKey,
+    serviceId,
+    serviceError,
     entries: computed(() => entries.value),
     ready,
     indexFor,
@@ -149,3 +276,8 @@ export const useMemoryStore = defineStore('memory', () => {
     resetState,
   }
 })
+
+function publicServiceError(error: unknown) {
+  const message = errorMessageFrom(error) ?? 'The memory service request failed.'
+  return message.includes('://') ? 'The memory service request failed.' : message
+}

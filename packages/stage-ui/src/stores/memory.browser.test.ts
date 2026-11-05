@@ -19,6 +19,12 @@ describe('memory store', () => {
   beforeEach(async () => {
     await records.clear()
     localStorage.removeItem('memory/entries')
+    localStorage.removeItem('memory/service-enabled')
+    localStorage.removeItem('memory/service-endpoint')
+    localStorage.removeItem('memory/service-team-id')
+    localStorage.removeItem('memory/service-user-id')
+    localStorage.removeItem('memory/service-api-key')
+    localStorage.removeItem('memory/service-id')
     // The entries are in the order of their changes, so each change gets its own time.
     let now = 1
     vi.spyOn(Date, 'now').mockImplementation(() => now++)
@@ -29,6 +35,12 @@ describe('memory store', () => {
       disposePinia(pinia)
     vi.restoreAllMocks()
     localStorage.removeItem('memory/entries')
+    localStorage.removeItem('memory/service-enabled')
+    localStorage.removeItem('memory/service-endpoint')
+    localStorage.removeItem('memory/service-team-id')
+    localStorage.removeItem('memory/service-user-id')
+    localStorage.removeItem('memory/service-api-key')
+    localStorage.removeItem('memory/service-id')
     await records.clear()
   })
 

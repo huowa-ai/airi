@@ -15,8 +15,12 @@ export type {
   AddConversationResult,
   ConversationHit,
   ConversationMessageInput,
+  DeleteConversationInput,
+  DeleteConversationResult,
   MemoryV3Client,
   MemoryV3ClientOptions,
+  QueryConversationInput,
+  QueryConversationResult,
   SearchConversationInput,
   SearchConversationResult,
 } from './memory-client'
@@ -36,3 +40,4 @@ export type {
   MemoryStorage,
   MemoryWrite,
 } from './memory-storage'
+export { createRemoteMemoryStorage, factSessionId } from './remote-memory'
