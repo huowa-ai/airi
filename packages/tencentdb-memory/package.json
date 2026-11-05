@@ -1,0 +1,44 @@
+{
+  "name": "@proj-airi/tencentdb-memory",
+  "type": "module",
+  "version": "0.15.1",
+  "private": true,
+  "description": "Channel module and storage port for AIRI long-term memory on MemoryCore",
+  "author": {
+    "name": "Moeru AI Project AIRI Team",
+    "email": "airi@moeru.ai",
+    "url": "https://github.com/moeru-ai"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/moeru-ai/airi.git",
+    "directory": "packages/tencentdb-memory"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./node": "./src/node.ts"
+  },
+  "scripts": {
+    "dev": "tsx src/main.ts",
+    "smoke:l0": "tsx src/smoke-l0.ts",
+    "test:run": "vitest run --config vitest.config.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@guiiai/logg": "catalog:",
+    "@moeru/std": "catalog:",
+    "@proj-airi/plugin-protocol": "workspace:^",
+    "@proj-airi/server-sdk": "workspace:^",
+    "uuid": "catalog:",
+    "valibot": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/ws": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:vitest",
+    "ws": "catalog:"
+  }
+}
