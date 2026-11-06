@@ -12,6 +12,21 @@ auth/OIDC routes.
 - Redis cache, configuration KV, cross-instance Pub/Sub, and the Redis Streams infrastructure.
 - Local verification of Auth-issued OIDC JWTs through public JWKS.
 
+## Doubao speech proxy
+
+Speech and recognition for the call go through AIRI. The browser does not hold `X-Api-Key`.
+
+Set `VOLCENGINE_SPEECH_ACCESS_TOKEN` in `server/apps/api/.env.local`. Do not commit that file. An unset token keeps the routes mounted. A request then returns 503 `VOLCENGINE_SPEECH_NOT_CONFIGURED`.
+
+Live check:
+
+1. Start the API with the token set.
+2. Sign in, then open Settings, Providers, Doubao Speech.
+3. Speak one sentence from that page, or post `{ "input": "Hello", "voice": "S_hMBcmqRi2" }` to `/api/v1/volcengine/audio/speech` with the session token.
+4. Make sure that the browser request has no `X-Api-Key` header.
+
+The speech route is `POST /api/v1/volcengine/audio/speech`. The recognition route is `POST /api/v1/volcengine/audio/transcriptions/stream`. See the [proxy ADR](../../docs/ai/adr/2026-11-06-volcengine-speech-proxy.md).
+
 ## LLM request content
 
 Chat Completions and Responses retain diagnostic input, output, and error content

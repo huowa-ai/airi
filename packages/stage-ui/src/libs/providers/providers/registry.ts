@@ -21,6 +21,7 @@ import type {
   providerOfficialTranscription,
 } from './official'
 import type { providerSherpawTranscription } from './sherpaw'
+import type { providerVolcengineDoubaoSpeech, providerVolcengineDoubaoTranscription } from './volcengine-doubao'
 
 import { orderBy } from 'es-toolkit'
 
@@ -41,6 +42,8 @@ type StageOnlyProviderId
     | typeof providerOfficialSpeech.id
     | typeof providerOfficialSpeechStreaming.id
     | typeof providerOfficialTranscription.id
+    | typeof providerVolcengineDoubaoSpeech.id
+    | typeof providerVolcengineDoubaoTranscription.id
 
 /** IDs of definitions registered by stage-ui, including portable definitions. */
 export type StageProviderId = PortableProviderId | StageOnlyProviderId

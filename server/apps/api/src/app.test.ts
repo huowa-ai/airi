@@ -62,6 +62,20 @@ function createTestDeps(webAppUrl = 'https://airi.moeru.ai') {
 }
 
 describe('business API app', () => {
+  it('rejects an anonymous Doubao speech request', async () => {
+    const { app } = await buildApp(createTestDeps())
+
+    expect((await app.request('/api/v1/volcengine/audio/speech', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ input: 'Hello' }),
+    })).status).toBe(401)
+    expect((await app.request('/api/v1/volcengine/audio/transcriptions/stream', {
+      method: 'POST',
+      body: new Uint8Array([1, 2, 3]),
+    })).status).toBe(401)
+  })
+
   it('does not expose management routes', async () => {
     const { app } = await buildApp(createTestDeps())
 

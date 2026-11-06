@@ -2405,6 +2405,14 @@ pages:
               description: App ID of the project where you can obtain in Console
               label: App ID
         title: Volcano Engine
+      volcengine-doubao-speech:
+        description: AIRI speaks with the Doubao voice clone. The key stays on the server.
+        proxy-note: This page does not store an API key. The server adds the key.
+        title: Doubao Speech
+      volcengine-doubao-transcription:
+        description: AIRI hears speech through the Doubao proxy. The key stays on the server.
+        proxy-note: This page does not store an API key. The server adds the key.
+        title: Doubao Hearing
       volcengine-coding-plan:
         description: Volcengine Coding Plan
         models:

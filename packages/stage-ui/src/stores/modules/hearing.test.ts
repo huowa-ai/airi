@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
+import { VOLCENGINE_DOUBAO_TRANSCRIPTION_PROVIDER_ID } from '../../libs/providers/providers/volcengine-doubao/constants'
+import { streamTranscription } from '../../libs/providers/stream-transcription'
 import {
   describeEmptyTranscriptionResponse,
   filterTranscriptionByConfidence,
@@ -48,6 +50,14 @@ describe('resolveStreamTranscriptionExecutor', () => {
     const executor = resolveStreamTranscriptionExecutor('official-provider-transcription')
 
     expect(executor).toBe(resolveStreamTranscriptionExecutor('aliyun-nls-transcription'))
+  })
+
+  /**
+   * @example
+   * resolveStreamTranscriptionExecutor('volcengine-doubao-transcription')
+   */
+  it('routes Doubao hearing through the shared streaming transcription adapter', () => {
+    expect(resolveStreamTranscriptionExecutor(VOLCENGINE_DOUBAO_TRANSCRIPTION_PROVIDER_ID)).toBe(streamTranscription)
   })
 })
 
