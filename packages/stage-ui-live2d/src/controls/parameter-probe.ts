@@ -1,6 +1,6 @@
 import type { Live2DParameterCatalog, Live2DParameterChannel, Live2DParameterMapping, Live2DParameterProbeCache, Live2DUnusedParameter } from './parameter-mapping'
 
-import { live2dParameterChannels, resolveLive2DParameterRig } from './parameter-mapping'
+import { live2dParameterChannels, live2dPhysicsRootBodyChannel, resolveLive2DParameterRig } from './parameter-mapping'
 
 /** One drawable box in model canvas space. Y grows downward. */
 export interface Live2DProbeDrawable {
@@ -242,9 +242,17 @@ export function live2dProbeCacheFromMotions(
   for (const channel of live2dParameterChannels) {
     const ids = base.channels[channel].bindings.map(binding => binding.paramId)
       .filter((id) => {
+        // Position* and LeanInput often move no drawable until physics runs.
+        // Dropping them leaves only outputs, and physics then rebuilds the body from 0.
+        if (live2dPhysicsRootBodyChannel(id) === channel)
+          return true
         const motion = measured.get(id)
         return !motion || motion.moved
       })
+    for (const id of catalog.physicsInputIds) {
+      if (live2dPhysicsRootBodyChannel(id) === channel && !ids.includes(id))
+        ids.push(id)
+    }
     for (const motion of motions) {
       if (!motion.moved || channelForMotion(motion) !== channel || ids.includes(motion.paramId))
         continue

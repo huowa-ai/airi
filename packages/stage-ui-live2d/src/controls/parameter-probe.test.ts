@@ -146,4 +146,36 @@ describe('live2d parameter probe', () => {
     expect(rig.channels.bodyAngleX.layer).toBe('card')
     expect(rig.channels.bodyAngleX.bindings).toEqual([{ paramId: 'HipAngleX' }])
   })
+
+  it('keeps physics root inputs when the mesh probe only records body outputs', () => {
+    const cache = live2dProbeCacheFromMotions({
+      parameterIds: ['ParamBodyAngleX', 'HipAngleX', 'PositionX', 'LeanInput', 'StillAngleX'],
+      physicsInputIds: ['PositionX', 'LeanInput', 'ParamBodyAngleX', 'HipAngleX', 'StillAngleX'],
+      physicsGroups: [['ParamBodyAngleX', 'HipAngleX', 'StillAngleX', 'PositionX', 'LeanInput']],
+    }, [
+      { paramId: 'ParamBodyAngleX', moved: true, region: 'torso', axis: 'x', tight: false },
+      { paramId: 'HipAngleX', moved: true, region: 'torso', axis: 'x', tight: false },
+      { paramId: 'PositionX', moved: false, region: 'other', tight: false },
+      { paramId: 'LeanInput', moved: false, region: 'other', tight: false },
+      { paramId: 'StillAngleX', moved: false, region: 'other', tight: false },
+    ], 'hash-body')
+
+    expect(cache.mapping.bodyAngleX?.map(binding => binding.paramId)).toEqual([
+      'ParamBodyAngleX',
+      'PositionX',
+      'LeanInput',
+      'HipAngleX',
+    ])
+
+    const rig = resolveLive2DParameterRig({
+      bodyAngleX: cache.mapping.bodyAngleX,
+    }, {
+      parameterIds: ['ParamBodyAngleX', 'HipAngleX'],
+      physicsInputIds: [],
+      modelHash: 'hash-body',
+      parameterProbe: cache,
+    })
+    expect(rig.channels.bodyAngleX.layer).toBe('card')
+    expect(rig.channels.bodyAngleX.bindings.map(binding => binding.paramId)).toContain('PositionX')
+  })
 })

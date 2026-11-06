@@ -261,7 +261,7 @@ function sameAsDefault(channel: Live2DParameterChannel, bindings: readonly Live2
  * Chest and bust ids stay out. On bundled models such as Hiyori those names
  * belong to secondary parts, not the follow skeleton.
  */
-const bodyIdPattern = /hip|waist|shoulder|bodyangle|torso/i
+const bodyIdPattern = /hip|waist|shoulder|bodyangle|torso|position[xyz]|leaninput/i
 /** Expression and limb ids that must not follow the head or the body. */
 const excludedIdPattern = /open|smile|squint|brow|tear|lash|highlight|leg|arm|hand|finger|hair|skirt|ear|ribbon/i
 const hairTextPattern = /头发|[髪发裙耳]|hair|skirt|ear/i
@@ -346,7 +346,24 @@ function descriptorFamily(id: string, descriptor: Live2DParameterDescriptor): 'h
   return undefined
 }
 
+/**
+ * Physics-root pose inputs that drive body outputs such as `HipAngle*` and
+ * `ParamBodyAngle*`. `LeanInput` has no axis letter and still feeds lateral lean.
+ */
+export function live2dPhysicsRootBodyChannel(id: string): Live2DParameterChannel | undefined {
+  if (/^LeanInput$/i.test(id) || /^PositionX$/i.test(id))
+    return 'bodyAngleX'
+  if (/^PositionY$/i.test(id))
+    return 'bodyAngleY'
+  if (/^PositionZ$/i.test(id))
+    return 'bodyAngleZ'
+  return undefined
+}
+
 function structuralChannel(id: string, descriptor: Live2DParameterDescriptor | undefined): Live2DParameterChannel | undefined {
+  const rootChannel = live2dPhysicsRootBodyChannel(id)
+  if (rootChannel)
+    return rootChannel
   const axis = axisOf(id)
   if (bodyIdPattern.test(id) && axis)
     return channelForFamily('body', axis)
@@ -620,6 +637,35 @@ export function readLive2DParameter(
  */
 const focusDegrees = { head: 30, body: 10 } as const
 
+function coreHasParameter(model: Live2DParameterWriter, id: string): boolean {
+  const ids = (model as { _parameterIds?: readonly unknown[] })._parameterIds
+  if (!Array.isArray(ids))
+    return false
+  return ids.some(item => parameterIdText(item) === id)
+}
+
+/**
+ * Writes the focus lean into physics-root pose inputs.
+ *
+ * Physics runs after focus and rebuilds `HipAngle*` and `ParamBodyAngle*`
+ * from these inputs. Motion does not reload them each frame, so an add would
+ * stick at the clamp. An absolute write stays reversible. A model without
+ * the id, such as Hiyori, is left unchanged.
+ */
+function writePhysicsRootPose(
+  model: Live2DParameterWriter,
+  focus: { x: number, y: number },
+): void {
+  const write = (id: string, value: number) => {
+    if (coreHasParameter(model, id))
+      model.setParameterValueById(id, value)
+  }
+  write('PositionX', focus.x * focusDegrees.head)
+  write('LeanInput', focus.x * focusDegrees.head)
+  write('PositionY', focus.y * focusDegrees.head)
+  write('PositionZ', focus.x * focusDegrees.body)
+}
+
 /**
  * Replaces the built-in focus update so every bound parameter receives it.
  *
@@ -644,6 +690,7 @@ export function installLive2DFocusMapping(
     addLive2DParameter(focusModel.coreModel, current, 'headAngleY', focus.y * focusDegrees.head)
     addLive2DParameter(focusModel.coreModel, current, 'headAngleZ', focus.x * focus.y * -focusDegrees.head)
     addLive2DParameter(focusModel.coreModel, current, 'bodyAngleX', focus.x * focusDegrees.body)
+    writePhysicsRootPose(focusModel.coreModel, focus)
 
     const currentProbe = probe?.()
     if (currentProbe)
