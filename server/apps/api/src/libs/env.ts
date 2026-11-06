@@ -167,6 +167,12 @@ const EnvSchema = intersect([S3EnvironmentSchema, object({
   TEST_AUTH_USER_EMAIL: optional(pipe(string(), nonEmpty('TEST_AUTH_USER_EMAIL must not be empty when set')), 'test@example.com'),
   TEST_AUTH_USER_ID: optional(pipe(string(), nonEmpty('TEST_AUTH_USER_ID must not be empty when set')), 'test-user'),
   TEST_AUTH_USER_NAME: optional(pipe(string(), nonEmpty('TEST_AUTH_USER_NAME must not be empty when set')), 'Test User'),
+  // Doubao speech and recognition proxy. The browser never receives this token.
+  // An unset value keeps the routes mounted and returns 503 VOLCENGINE_SPEECH_NOT_CONFIGURED.
+  VOLCENGINE_SPEECH_ACCESS_TOKEN: optional(pipe(
+    string(),
+    nonEmpty('VOLCENGINE_SPEECH_ACCESS_TOKEN must not be empty when set'),
+  )),
   // Canonical user-facing web app origin. Used as the Stripe redirect base
   // (success_url / cancel_url / portal return_url) when a request has no trusted
   // browser origin — notably the Electron desktop renderer, which loads from

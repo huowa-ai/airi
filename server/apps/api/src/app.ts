@@ -73,6 +73,7 @@ import { createProviderRoutes } from './routes/providers'
 import { createRevenuecatRoutes } from './routes/revenuecat'
 import { createStripeRoutes } from './routes/stripe'
 import { createVoicePackRoutes } from './routes/voice-packs'
+import { createVolcengineSpeechHandler, createVolcengineTranscriptionHandler } from './routes/volcengine-speech/route'
 import { accountEventsStream, createUserDeletedEventHandler } from './services/adapters/account-events'
 import { createConfigKVService } from './services/adapters/config-kv'
 import { createConfigKVStore } from './services/adapters/config-kv/store'
@@ -291,6 +292,13 @@ export async function buildApp(deps: AppDeps) {
     providerCatalogService: deps.providerCatalogService,
   }))
 
+  // Doubao recognition stays before the body limit. The body is a live PCM stream.
+  // The access token comes from the server environment, not from the browser.
+  app.post('/api/v1/volcengine/audio/transcriptions/stream', createVolcengineTranscriptionHandler({
+    db: deps.db,
+    env: deps.env,
+  }))
+
   // Cross-instance config invalidation. The subscriber owns its own
   // connection + lifecycle metrics; see services/llm-router/config-sync-subscriber.ts.
   createConfigSyncSubscriber({
@@ -335,6 +343,12 @@ export async function buildApp(deps: AppDeps) {
       return defaultApiBodyLimit(c, next)
     })
     .onError(createErrorHandler(logger))
+    // Doubao speech is a JSON body, so it keeps the default body limit.
+    // The access token comes from the server environment, not from the browser.
+    .post('/api/v1/volcengine/audio/speech', createVolcengineSpeechHandler({
+      db: deps.db,
+      env: deps.env,
+    }))
 
     /**
      * Liveness probe (K8s convention). Returns 200 as long as the Node

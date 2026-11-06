@@ -11,6 +11,7 @@ import './kokoro-local'
 import './nvidia'
 import './official'
 import './prompt-api'
+import './volcengine-doubao'
 
 registerProviders(portableProviderDefinitions)
 
@@ -25,3 +26,11 @@ export {
 } from './registry'
 
 export type { StageProviderId } from './registry'
+
+export {
+  VOLCENGINE_DOUBAO_SPEAKER,
+  VOLCENGINE_DOUBAO_SPEECH_MODEL,
+  VOLCENGINE_DOUBAO_SPEECH_PROVIDER_ID,
+  VOLCENGINE_DOUBAO_TRANSCRIPTION_MODEL,
+  VOLCENGINE_DOUBAO_TRANSCRIPTION_PROVIDER_ID,
+} from './volcengine-doubao'

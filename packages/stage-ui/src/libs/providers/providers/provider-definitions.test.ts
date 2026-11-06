@@ -71,6 +71,8 @@ describe('migrated provider definitions', () => {
       'index-tts-vllm',
       'alibaba-cloud-model-studio',
       'volcengine',
+      'volcengine-doubao-speech',
+      'volcengine-doubao-transcription',
       'minimax-speech',
       'openrouter-audio-speech',
       'mimo-audio-speech',

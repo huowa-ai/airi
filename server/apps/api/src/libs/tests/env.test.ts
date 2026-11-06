@@ -51,6 +51,21 @@ describe('parseEnv', () => {
     ])
   })
 
+  it('leaves the Doubao speech token unset until the operator sets it', () => {
+    const env = parseEnv(baseEnv())
+
+    expect(env.VOLCENGINE_SPEECH_ACCESS_TOKEN).toBeUndefined()
+  })
+
+  it('reads the Doubao speech token from the environment', () => {
+    const env = parseEnv({
+      ...baseEnv(),
+      VOLCENGINE_SPEECH_ACCESS_TOKEN: 'server-token',
+    })
+
+    expect(env.VOLCENGINE_SPEECH_ACCESS_TOKEN).toBe('server-token')
+  })
+
   it('parses TEST_AUTH_TOKEN with default virtual user settings', () => {
     const env = parseEnv({
       ...baseEnv(),
