@@ -20,6 +20,13 @@ const requiredEnv = [
   memoryClientEnv.agentId,
 ] as const
 
+/**
+ * Local gateway values.
+ * A v3 call without `Authorization` or `x-tdai-service-id` returns 401, including when gateway auth is disabled.
+ */
+export const defaultMemoryApiKey = 'local'
+export const defaultMemoryServiceId = 'default'
+
 /** One deployment, one owner, and the default agent id for a v3 call. */
 export interface MemoryClientConfig {
   /** `http` or `https` origin. The local gateway is `http://127.0.0.1:8420`. */
@@ -28,8 +35,10 @@ export interface MemoryClientConfig {
   userId: string
   /** Default `agent_id` when a call does not pass one. */
   agentId: string
-  serviceId?: string
-  apiKey?: string
+  /** Sent as `x-tdai-service-id`. An empty setting becomes {@link defaultMemoryServiceId}. */
+  serviceId: string
+  /** Sent as `Authorization: Bearer`. An empty setting becomes {@link defaultMemoryApiKey}. */
+  apiKey: string
 }
 
 export type MemoryClientConfigResult = {
@@ -63,10 +72,10 @@ export function readMemoryClientConfig(env: EnvSource): MemoryClientConfigResult
   const teamId = readId(env[memoryClientEnv.teamId], memoryClientEnv.teamId, missing, invalid)
   const userId = readId(env[memoryClientEnv.userId], memoryClientEnv.userId, missing, invalid)
   const agentId = readId(env[memoryClientEnv.agentId], memoryClientEnv.agentId, missing, invalid)
-  const serviceId = readOptionalId(env[memoryClientEnv.serviceId], memoryClientEnv.serviceId, invalid)
-  const apiKey = readOptionalId(env[memoryClientEnv.apiKey], memoryClientEnv.apiKey, invalid)
+  const serviceId = readDefaultedId(env[memoryClientEnv.serviceId], memoryClientEnv.serviceId, invalid, defaultMemoryServiceId)
+  const apiKey = readDefaultedId(env[memoryClientEnv.apiKey], memoryClientEnv.apiKey, invalid, defaultMemoryApiKey)
 
-  if (missing.length > 0 || invalid.length > 0 || !endpoint || !teamId || !userId || !agentId) {
+  if (missing.length > 0 || invalid.length > 0 || !endpoint || !teamId || !userId || !agentId || !serviceId || !apiKey) {
     return { configured: false, missing, invalid }
   }
 
@@ -77,8 +86,8 @@ export function readMemoryClientConfig(env: EnvSource): MemoryClientConfigResult
       teamId,
       userId,
       agentId,
-      ...(serviceId ? { serviceId } : {}),
-      ...(apiKey ? { apiKey } : {}),
+      serviceId,
+      apiKey,
     },
   }
 }
@@ -123,9 +132,9 @@ function readId(value: string | undefined, name: string, missing: string[], inva
   return parsed.output
 }
 
-function readOptionalId(value: string | undefined, name: string, invalid: string[]) {
+function readDefaultedId(value: string | undefined, name: string, invalid: string[], fallback: string) {
   if (value === undefined || value === '')
-    return undefined
+    return fallback
 
   const parsed = safeParse(idSchema, value)
   if (!parsed.success) {

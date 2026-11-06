@@ -14,6 +14,7 @@ interface CapturedRequest {
   url?: string
   authorization?: string
   serviceId?: string
+  requestId?: string
   body: unknown
 }
 
@@ -35,6 +36,7 @@ async function fakeGateway(handler: (request: CapturedRequest) => { status?: num
       url: request.url,
       authorization: request.headers.authorization,
       serviceId: headerValue(request.headers['x-tdai-service-id']),
+      requestId: headerValue(request.headers['x-request-id']),
       body: text ? JSON.parse(text) as unknown : undefined,
     }
     captured.push(capturedRequest)
@@ -69,12 +71,14 @@ function client(endpoint: string, extras: { apiKey?: string, serviceId?: string 
     teamId: 'team-1',
     userId: 'user-1',
     agentId: 'card-1',
+    apiKey: 'local',
+    serviceId: 'default',
     ...extras,
   })
 }
 
 describe('memory v3 client', () => {
-  it('adds and searches L0 with the stable ids and without a key header', async () => {
+  it('adds and searches L0 with the stable ids and the default key', async () => {
     const gateway = await fakeGateway((request) => {
       if (request.url === endpointPath) {
         return {
@@ -127,7 +131,9 @@ describe('memory v3 client', () => {
       userId: 'user-1',
       agentId: 'card-1',
     }])
-    expect(gateway.captured[0]?.authorization).toBeUndefined()
+    expect(gateway.captured[0]?.authorization).toBe('Bearer local')
+    expect(gateway.captured[0]?.serviceId).toBe('default')
+    expect(gateway.captured[0]?.requestId).toBeUndefined()
     expect(gateway.captured[0]?.body).toMatchObject({
       team_id: 'team-1',
       agent_id: 'card-1',
@@ -158,6 +164,7 @@ describe('memory v3 client', () => {
 
     expect(gateway.captured[0]?.authorization).toBe(`Bearer ${secret}`)
     expect(gateway.captured[0]?.serviceId).toBe('service-1')
+    expect(gateway.captured[0]?.requestId).toBeUndefined()
   })
 
   it('redacts the key and the endpoint from a gateway error', async () => {
@@ -193,5 +200,104 @@ describe('memory v3 client', () => {
       messages: [{ role: 'user', content: '' }],
     })).rejects.toBeInstanceOf(MemoryClientError)
     expect(gateway.captured).toEqual([])
+  })
+
+  it('sends an ISO timestamp and rejects a number', async () => {
+    const gateway = await fakeGateway(() => ({
+      body: {
+        code: 0,
+        message: 'ok',
+        data: { accepted_ids: ['msg-1'], accepted_versions: ['v1'], total_count: 1 },
+      },
+    }))
+    const memory = client(gateway.endpoint)
+
+    await memory.addConversation({
+      sessionId: 'sess-1',
+      messages: [{ role: 'user', content: 'Hello', timestamp: '2026-11-01T00:00:00Z' }],
+    })
+    const numericTime: { role: 'user', content: string, timestamp?: string } = { role: 'user', content: 'Hello' }
+    Object.assign(numericTime, { timestamp: 1 })
+    await expect(memory.addConversation({
+      sessionId: 'sess-1',
+      messages: [numericTime],
+    })).rejects.toBeInstanceOf(MemoryClientError)
+
+    expect(gateway.captured).toHaveLength(1)
+    expect(gateway.captured[0]?.body).toMatchObject({
+      messages: [{ timestamp: '2026-11-01T00:00:00Z' }],
+    })
+  })
+
+  it('reads L1 atoms, L2 scenes, and an L3 persona', async () => {
+    const gateway = await fakeGateway((request) => {
+      if (request.url === '/v3/atomic/query') {
+        return {
+          body: {
+            code: 0,
+            message: 'ok',
+            data: {
+              items: [{
+                id: 'atom-1',
+                version: 1,
+                type: 'instruction',
+                content: '先提饮品。',
+                background: '饮品',
+                updated_at: '2026-11-01T00:00:00Z',
+              }],
+              total: 1,
+            },
+          },
+        }
+      }
+      if (request.url === '/v3/scenario/ls') {
+        return {
+          body: {
+            code: 0,
+            message: 'ok',
+            data: {
+              entries: [{ path: 'drinks.md', version: 1, summary: 'Drinks', updated_at: '2026-11-02T00:00:00Z' }],
+              total: 1,
+            },
+          },
+        }
+      }
+      return {
+        body: {
+          code: 0,
+          message: 'ok',
+          data: {
+            content: '# Calm\n\nTea.',
+            version: 2,
+            updated_at: '2026-11-03T00:00:00Z',
+          },
+        },
+      }
+    })
+    const memory = client(gateway.endpoint)
+
+    const atoms = await memory.queryAtomic({ limit: 20, offset: 0 })
+    const scenes = await memory.listScenarios({})
+    const core = await memory.readCore({})
+
+    expect(atoms.items[0]).toMatchObject({ id: 'atom-1', version: 1, type: 'instruction', content: '先提饮品。' })
+    expect(scenes.entries[0]).toMatchObject({ path: 'drinks.md', summary: 'Drinks' })
+    expect(core.content).toContain('# Calm')
+    expect(gateway.captured[0]?.body).toMatchObject({ team_id: 'team-1', user_id: 'user-1', agent_id: 'card-1', limit: 20 })
+    expect(gateway.captured[0]?.authorization).toBe('Bearer local')
+    expect(gateway.captured[0]?.requestId).toBeUndefined()
+  })
+
+  it('treats a missing persona file as empty content', async () => {
+    const gateway = await fakeGateway(() => ({
+      body: {
+        code: 0,
+        message: 'ok',
+        data: { content: null, version: null, created_at: null, updated_at: null },
+      },
+    }))
+    const memory = client(gateway.endpoint)
+
+    await expect(memory.readCore({})).resolves.toMatchObject({ content: null })
   })
 })

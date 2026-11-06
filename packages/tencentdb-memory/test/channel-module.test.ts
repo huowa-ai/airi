@@ -76,6 +76,22 @@ describe('channel module', () => {
         calls.push('delete')
         throw new Error('unexpected delete')
       },
+      async queryAtomic() {
+        calls.push('atomic')
+        throw new Error('unexpected atomic')
+      },
+      async listScenarios() {
+        calls.push('scenario')
+        throw new Error('unexpected scenario')
+      },
+      async readScenario() {
+        calls.push('scenario-read')
+        throw new Error('unexpected scenario read')
+      },
+      async readCore() {
+        calls.push('core')
+        throw new Error('unexpected core')
+      },
     }
 
     const started = await startMemoryModule({

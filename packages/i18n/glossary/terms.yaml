@@ -513,6 +513,42 @@
       status: preferred
       context: The memory service is the long-term memory for this character.
 
+- id: memory-atom
+  subject: memory
+  translatable: true
+  definition: A fact the memory service extracts from a conversation.
+  note: >
+    Do not call it a relation. The service stores no link between atoms.
+  terms:
+    - text: L1 atom
+      part-of-speech: noun
+      status: preferred
+      context: Each L1 atom is one extracted fact.
+
+- id: memory-scene
+  subject: memory
+  translatable: true
+  definition: A file of scene knowledge for one team and one character.
+  note: >
+    Do not call it a chat session. It is not limited to one user.
+  terms:
+    - text: L2 scene
+      part-of-speech: noun
+      status: preferred
+      context: The L2 scene groups related atoms.
+
+- id: memory-persona
+  subject: memory
+  translatable: true
+  definition: The stable profile for one team and one character.
+  note: >
+    Do not call it the application core. It is not limited to one user.
+  terms:
+    - text: L3 persona
+      part-of-speech: noun
+      status: preferred
+      context: The L3 persona is one profile for the character.
+
 - id: short-term-memory
   subject: memory
   translatable: true

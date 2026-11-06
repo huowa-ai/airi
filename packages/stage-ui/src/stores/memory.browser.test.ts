@@ -97,9 +97,11 @@ describe('memory store', () => {
     await settings.remove(nickname)
     await settings.makeGeneral(tone)
 
-    await vi.waitFor(() => expect(chat.entries.find(entry => entry.id === nickname.id)).toBeUndefined())
-    expect(chat.entries.find(entry => entry.id === tone.id)?.persona).toBeUndefined()
-    expect(settings.entries).toHaveLength(1)
+    await vi.waitFor(() => {
+      expect(chat.entries.find(entry => entry.id === nickname.id)).toBeUndefined()
+      expect(chat.entries.find(entry => entry.id === tone.id)?.persona).toBeUndefined()
+      expect(settings.entries).toHaveLength(1)
+    })
   })
 
   it('keeps the service entries across restarts of the store', async () => {

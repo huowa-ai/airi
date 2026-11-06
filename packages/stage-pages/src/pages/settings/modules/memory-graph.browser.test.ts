@@ -11,6 +11,8 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 
 import MemoryGraphPage from './memory-graph.vue'
 
+import { memoryGraphFixture } from './memory-graph-fixture'
+
 import 'virtual:uno.css'
 
 const pinias: ReturnType<typeof createPinia>[] = []
@@ -61,7 +63,7 @@ describe('memory graph page', () => {
 
     await expect.element(screen.getByText('Memory service is off')).toBeVisible()
     await expect.element(screen.getByText('Porridge on this device.')).not.toBeInTheDocument()
-    await expect.element(screen.getByText('Facts: 0. Derived layout lines: 0.')).toBeVisible()
+    await expect.element(screen.getByText('Records: 0. Derived layout lines: 0.')).toBeVisible()
   })
 
   it('shows the service error and no invented facts when the service is unreachable', async () => {
@@ -84,7 +86,8 @@ describe('memory graph page', () => {
 
     expect(saved?.body).toBe('Ada likes tea.')
     await expect.element(screen.getByRole('button', { name: /Drink/ })).toBeVisible()
-    await expect.element(screen.getByText('L1 was not returned')).toBeVisible()
+    await expect.element(screen.getByText('L0 fact').first()).toBeVisible()
+    await expect.element(screen.getByText('L1 was not returned')).not.toBeInTheDocument()
     await expect.element(screen.getByText('Derived layout line. This line is not a stored relation.')).toBeVisible()
     await screen.getByRole('button', { name: /Drink/ }).click()
     await expect.element(screen.getByText('Ada likes tea.')).toBeVisible()
@@ -102,5 +105,42 @@ describe('memory graph page', () => {
     await expect.element(screen.getByRole('button', { name: /Drink/ })).toBeVisible()
     await expect.element(screen.getByText('Motion is reduced. The graph stays still. The list shows the same facts.')).toBeVisible()
     expect(screen.container.querySelector('canvas')).toBeNull()
+  })
+
+  it('shows fixture L1 atoms, one L2 scene, and one L3 persona', async () => {
+    const gateway = createMemoryCoreFetch()
+    gateway.seed({
+      facts: memoryGraphFixture.facts,
+      atoms: memoryGraphFixture.atoms.map(atom => ({ id: atom.id, type: atom.type, content: atom.content, ...(atom.background ? { background: atom.background } : {}) })),
+      scenes: [
+        { path: 'notes/', summary: 'Folder' },
+        ...memoryGraphFixture.scenes.map(scene => ({ path: scene.path, ...(scene.summary ? { summary: scene.summary } : {}), ...(scene.content ? { content: scene.content } : {}) })),
+      ],
+      cores: memoryGraphFixture.cores.map(core => ({ content: core.content })),
+    })
+    vi.stubGlobal('fetch', gateway.fetch)
+    enableMemoryService()
+    preferReducedMotion(false)
+    const { screen, memory } = await renderPage()
+    await memory.ready()
+
+    await expect.element(screen.getByText('Records: 29. Derived layout lines: 25.')).toBeVisible()
+    await expect.element(screen.getByText('L1 atom').first()).toBeVisible()
+    await expect.element(screen.getByText('L2 scene').first()).toBeVisible()
+    await expect.element(screen.getByText('L3 persona').first()).toBeVisible()
+    await expect.element(screen.getByText('Scenes and the persona follow the team and the character. They are not limited to this user.')).toBeVisible()
+    await expect.element(screen.getByRole('button', { name: /Folder/ })).not.toBeInTheDocument()
+    await page.screenshot({ path: '/workspace/packages/stage-pages/src/pages/settings/modules/memory-graph-layers.shot.png' })
+
+    await screen.getByRole('button', { name: /Calm companion/ }).click()
+    await expect.element(screen.getByText('This record follows the team and the character. It is not limited to this user.')).toBeVisible()
+    await expect.element(screen.getByRole('heading', { name: 'Drinks' })).toBeVisible()
+    await expect.element(screen.getByText('Unknown character')).not.toBeInTheDocument()
+    await page.screenshot({ path: '/workspace/packages/stage-pages/src/pages/settings/modules/memory-graph-persona.shot.png' })
+
+    await screen.getByRole('button', { name: /Afternoon tea/ }).click()
+    await expect.element(screen.getByText('Unknown character')).toBeVisible()
+    await expect.element(screen.getByText('card-1')).not.toBeInTheDocument()
+    await page.screenshot({ path: '/workspace/packages/stage-pages/src/pages/settings/modules/memory-graph-unknown-character.shot.png' })
   })
 })
