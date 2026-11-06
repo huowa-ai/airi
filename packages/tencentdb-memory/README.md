@@ -9,7 +9,7 @@ MemoryCore is the intended fact store. `useMemoryStore` stays the writer that to
 - A channel client that connects to `ws://localhost:6121/ws` and announces `tencentdb-memory`.
 - A `MemoryStorage` port and an in-process fake. Two callers can share one record map.
 - A MemoryCore v3 client for L0 conversation calls, and for L1, L2, and L3 reads. The graph reads those layers. This package does not write L1, L2, or L3.
-- A chat-turn queue. A finished turn is L0 on the chat agent. Manual facts use a different agent, `<card id>:facts`.
+- One L0 write, `appendConversation`. Chat turns and manual facts use the character card, or `airi:general`.
 
 The module does not listen for `input:text`. The stage chat store calls `onChatTurnComplete` and queues the L0 write. Startup does not call MemoryCore.
 
@@ -50,9 +50,11 @@ A gateway that allows only `Content-Type` and `Authorization` blocks the page. T
 
 ## Chat turns and manual facts
 
-A successful chat turn is `POST /v3/conversation/add` on the character card. The session id is the chat session. Empty text, a pure slash command, pure emoji, and an image with no caption are not stored. A copied system prompt and the memory index are removed before the write. The write runs in the background. A failure does not stop the chat.
+A successful chat turn and a manual fact both call `appendConversation`. The agent id is the character card, or `airi:general`. The chat session id is the chat session. Empty text, a pure slash command, pure emoji, and an image with no caption are not stored. A copied system prompt and the memory index are removed before the write. The write runs in the background. A failure does not stop the chat.
 
-The v3 catalog on `feat/server_team` has `atomic/update`, `atomic/query`, `atomic/search`, and `atomic/delete`. It has no atomic create route. `atomic/update` returns 404 for an unknown id. Manual facts stay L0 JSON in session `airi:facts`, on agent `<card id>:facts`. The role is `assistant`, so that write does not start extraction. The chat agent does not receive the fact.
+Manual facts stay L0 JSON in session `airi:facts`. The role is `assistant`. MemoryCore notifies L1 extraction only when the batch has a user message. The source is `feat/server_team` `MemoryCore/src/gateway/v2-router.ts`. That branch has no unit test for the rule. A fact-only batch on the shared agent does not notify. A chat batch on that agent does. If the gateway notifies an assistant-only batch, it extracts stored facts again.
+
+The v3 catalog has `atomic/update`, `atomic/query`, `atomic/search`, and `atomic/delete`. It has no atomic create route. `atomic/update` returns 404 for an unknown id. The graph lists these facts with `listFacts`, and it reads L1, L2, and L3 for the same agent ids.
 
 The current team id and user id stay as they are. A private team id per user is a later change.
 

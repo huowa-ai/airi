@@ -1,5 +1,7 @@
 import type { AddConversationInput, ConversationMessageInput, MemoryV3Client } from './memory-client'
 
+import { appendConversation } from './conversation-write'
+
 /** MemoryCore rejects conversation content longer than this. The v3 catalog limit is 8192. */
 const maxContentLength = 8192
 
@@ -19,7 +21,7 @@ export type ChatTurnSkipReason = 'empty' | 'command' | 'emoji' | 'image' | 'inte
 export interface ChatTurnInput {
   sessionId: string
   turnId: string
-  /** Chat agent. This is the character card, not the facts agent. */
+  /** Character card, or `airi:general`. Manual facts use this same id. */
   agentId: string
   userText: string
   assistantText: string
@@ -131,7 +133,7 @@ export function createChatTurnQueue(options: ChatTurnQueueOptions = {}): ChatTur
           seen.delete(oldest)
       }
       const prepared = decision.input
-      tail = tail.then(() => client.addConversation(prepared)).then(() => undefined, (error: unknown) => {
+      tail = tail.then(() => appendConversation(client, prepared)).then(() => undefined, (error: unknown) => {
         try {
           options.onError?.(error)
         }

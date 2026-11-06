@@ -39,7 +39,7 @@ export interface MemoryLayerResult<T> {
 }
 
 /**
- * L1 atoms, L2 scene files, and L3 persona text for the fact agents.
+ * L1 atoms, L2 scene files, and L3 persona text for the character agents.
  * L2 and L3 follow the team and the agent. The user id is sent and does not isolate those layers.
  * A failed layer returns no rows. The other layers still return.
  */
@@ -50,7 +50,7 @@ export interface MemoryLayerSnapshot {
 }
 
 /**
- * Reads L1, L2, and L3 for every fact agent.
+ * Reads L1, L2, and L3 for every character agent.
  * L2 directories are skipped. A missing L3 persona is an empty result, not an error.
  */
 export async function readMemoryLayers(client: MemoryV3Client): Promise<MemoryLayerSnapshot> {

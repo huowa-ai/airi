@@ -9,6 +9,7 @@ export {
   readMemoryClientConfig,
 } from './client-config'
 export type { MemoryClientConfig, MemoryClientConfigResult } from './client-config'
+export { appendConversation, batchNotifiesExtraction } from './conversation-write'
 export type { MemoryFactProjection, MemoryNotice } from './fact-projection'
 export { readMemoryLayers } from './layer-read'
 export type {
@@ -62,4 +63,4 @@ export type {
   MemoryStorage,
   MemoryWrite,
 } from './memory-storage'
-export { createRemoteMemoryStorage, factAgentId, factSessionId } from './remote-memory'
+export { createRemoteMemoryStorage, factSessionId } from './remote-memory'

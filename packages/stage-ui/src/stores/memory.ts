@@ -4,7 +4,7 @@ import type { MemoryEntry, MemoryWrite } from '../types/memory'
 
 import { errorMessageFrom } from '@moeru/std'
 import { useLocalStorageManualReset } from '@proj-airi/stage-shared/composables'
-import { createChatTurnQueue, createMemoryClient, createRemoteMemoryStorage, GENERAL_AGENT_ID, memoryClientEnv, readMemoryClientConfig, readMemoryLayers } from '@proj-airi/tencentdb-memory'
+import { agentIdForEntry, createChatTurnQueue, createMemoryClient, createRemoteMemoryStorage, GENERAL_AGENT_ID, memoryClientEnv, readMemoryClientConfig, readMemoryLayers } from '@proj-airi/tencentdb-memory'
 import { useBroadcastChannel } from '@vueuse/core'
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
@@ -159,6 +159,7 @@ export const useMemoryStore = defineStore('memory', () => {
 
   /**
    * The live MemoryCore facts for this team and user.
+   * Each fact is L0 on the character card, in session `airi:facts`. Chat turns use that same card id.
    * Empty when the service is off, the read is still running, or the read failed.
    * Callers must not replace this list with device facts or example facts.
    */
@@ -249,7 +250,7 @@ export const useMemoryStore = defineStore('memory', () => {
       return false
     return chatTurns.enqueue(client, {
       ...input,
-      agentId: input.personaId || GENERAL_AGENT_ID,
+      agentId: agentIdForEntry({ persona: input.personaId || undefined }),
     })
   }
 

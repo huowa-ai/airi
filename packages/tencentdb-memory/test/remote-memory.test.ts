@@ -2,7 +2,8 @@ import type { MemoryV3Client } from '../src/memory-client'
 
 import { describe, expect, it } from 'vitest'
 
-import { createRemoteMemoryStorage, factAgentId, factSessionId } from '../src/remote-memory'
+import { appendConversation, batchNotifiesExtraction } from '../src/conversation-write'
+import { createRemoteMemoryStorage, factSessionId } from '../src/remote-memory'
 
 interface Row {
   id: string
@@ -12,12 +13,14 @@ interface Row {
   content: string
 }
 
-function gateway(): MemoryV3Client & { rows: Row[] } {
+function gateway(): MemoryV3Client & { rows: Row[], extractions: Array<{ agentId: string, sessionId: string }> } {
   const rows: Row[] = []
+  const extractions: Array<{ agentId: string, sessionId: string }> = []
   let nextId = 1
 
   return {
     rows,
+    extractions,
     async addConversation(input) {
       const acceptedIds = input.messages.map((message) => {
         const id = `msg-${nextId}`
@@ -31,6 +34,9 @@ function gateway(): MemoryV3Client & { rows: Row[] } {
         })
         return id
       })
+      // Same rule as MemoryCore handleConversationAdd: notify only when a user message is present.
+      if (batchNotifiesExtraction(input.messages))
+        extractions.push({ agentId: input.agentId ?? '', sessionId: input.sessionId })
       return { acceptedIds, acceptedVersions: acceptedIds.map(() => 'v1'), totalCount: acceptedIds.length }
     },
     async searchConversation(input) {
@@ -99,13 +105,24 @@ describe('remote memory storage', () => {
     expect(saved).toMatchObject({ outcome: 'saved', entry: { description: 'Name', body: 'Ada likes tea', persona: 'card-1' } })
     expect(entries.map(entry => entry.persona)).toEqual(['card-1'])
     const factRows = client.rows.filter(row => row.sessionId === factSessionId)
-    expect(factRows.map(row => row.agentId)).toEqual([factAgentId('card-1')])
+    expect(factRows.map(row => row.agentId)).toEqual(['card-1'])
     expect(factRows.every(row => row.role === 'assistant')).toBe(true)
-    expect(client.rows.some(row => row.agentId === 'card-1' && row.sessionId === factSessionId)).toBe(false)
-    const otherCard = await client.queryConversation({ agentId: factAgentId('card-2'), sessionId: factSessionId })
+    expect(batchNotifiesExtraction(factRows)).toBe(false)
+    expect(client.extractions).toEqual([])
+    const otherCard = await client.queryConversation({ agentId: 'card-2', sessionId: factSessionId })
     expect(otherCard.messages).toEqual([])
-    const found = await client.searchConversation({ query: 'tea', agentId: factAgentId('card-1'), sessionId: factSessionId })
+    const found = await client.searchConversation({ query: 'tea', agentId: 'card-1', sessionId: factSessionId })
     expect(found.messages).toHaveLength(1)
+
+    await appendConversation(client, {
+      agentId: 'card-1',
+      sessionId: 'session-chat',
+      messages: [
+        { role: 'user', content: 'Ada likes tea' },
+        { role: 'assistant', content: 'I will remember that.' },
+      ],
+    })
+    expect(client.extractions).toEqual([{ agentId: 'card-1', sessionId: 'session-chat' }])
   })
 
   it('keeps a general fact off the card agent after makeGeneral', async () => {

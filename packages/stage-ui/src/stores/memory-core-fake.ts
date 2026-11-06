@@ -4,8 +4,6 @@
  * L2 and L3 are stored by team and agent. The user id does not split them.
  */
 
-import { factAgentId } from '@proj-airi/tencentdb-memory'
-
 interface GatewayRow {
   id: string
   agentId: string
@@ -255,7 +253,7 @@ export function createMemoryCoreFetch() {
           personas.add(fact.persona)
         rows.push({
           id: fact.id,
-          agentId: factAgentId(fact.persona),
+          agentId: fact.persona || generalAgentId,
           sessionId: factSessionId,
           role: 'assistant',
           content: JSON.stringify({

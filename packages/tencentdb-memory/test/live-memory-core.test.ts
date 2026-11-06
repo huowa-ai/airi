@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { createMemoryClient, memoryClientEnv, readMemoryClientConfig } from '../src'
-import { createRemoteMemoryStorage, factAgentId } from '../src/remote-memory'
+import { createRemoteMemoryStorage } from '../src/remote-memory'
 
 const live = process.env.LIVE_MEMORY_CORE === '1'
 
@@ -31,14 +31,14 @@ describe.skipIf(!live)('live MemoryCore L0', () => {
     const entries = await storage.list()
     expect(entries.some(entry => entry.id === saved.entry.id && entry.persona === 'card-1')).toBe(true)
 
-    const other = await client.queryConversation({ agentId: factAgentId('card-2'), sessionId: 'airi:facts', limit: 20 })
+    const other = await client.queryConversation({ agentId: 'card-2', sessionId: 'airi:facts', limit: 20 })
     expect(other.messages.some(message => message.content.includes(marker))).toBe(false)
 
     let hits = 0
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const found = await client.searchConversation({
         query: marker,
-        agentId: factAgentId('card-1'),
+        agentId: 'card-1',
         sessionId: 'airi:facts',
         limit: 5,
       })

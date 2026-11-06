@@ -4,24 +4,11 @@ import type { MemoryEntry, MemoryMutation, MemoryProvenance, MemoryStorage, Memo
 import { v7 as uuidv7 } from 'uuid'
 import { array, boolean, literal, number, object, optional, safeParse, string } from 'valibot'
 
-import { GENERAL_AGENT_ID } from './memory-storage'
+import { appendConversation } from './conversation-write'
+import { agentIdForEntry, GENERAL_AGENT_ID } from './memory-storage'
 
 /** L0 session that holds fact records. It is not a chat transcript. */
 export const factSessionId = 'airi:facts'
-
-/**
- * Agent that holds manual facts for one character.
- * The chat agent is the card id. Facts do not use that id, so chat extraction does not read them.
- * A general fact uses `airi:general:facts`.
- *
- * @example
- * factAgentId('card-1')
- * // => 'card-1:facts'
- */
-export function factAgentId(persona: string | undefined) {
-  const owner = !persona || persona === GENERAL_AGENT_ID ? GENERAL_AGENT_ID : persona
-  return `${owner}:facts`
-}
 
 const directoryAgentId = 'airi:directory'
 const directorySessionId = 'airi:directory'
@@ -59,7 +46,8 @@ interface DirectoryState {
 
 /**
  * Stores AIRI facts as L0 messages on MemoryCore.
- * One team and one user. The agent id is {@link factAgentId}, not the chat agent.
+ * One team and one user. The agent id is the character card, or {@link GENERAL_AGENT_ID}.
+ * Chat turns use that same id. The fact session is {@link factSessionId}.
  * The message role is `assistant`, so this write does not start L1 extraction.
  * IndexedDB is not written here.
  */
@@ -184,7 +172,7 @@ async function removeFacts(client: MemoryV3Client, ids: string[], updatedAt: num
 
 async function clearFacts(client: MemoryV3Client, updatedAt: number) {
   const directory = await readDirectory(client)
-  const agents = [factAgentId(undefined), ...directory.personas.map(persona => factAgentId(persona))]
+  const agents = [agentIdForEntry({}), ...directory.personas.map(persona => agentIdForEntry({ persona }))]
   for (const agentId of agents) {
     await client.deleteConversation({ agentId, sessionIds: [factSessionId] })
   }
@@ -207,7 +195,7 @@ async function loadFacts(client: MemoryV3Client, directory: DirectoryState) {
   const owners: Array<string | undefined> = [undefined, ...directory.personas]
   const facts: LiveFact[] = []
   for (const persona of owners) {
-    const agentId = factAgentId(persona)
+    const agentId = agentIdForEntry({ persona })
     const messages = await queryAll(client, agentId, factSessionId)
     for (const message of messages) {
       const parsed = safeParse(factSchema, parseJson(message.content))
@@ -247,8 +235,8 @@ function newest(facts: LiveFact[], id: string | undefined) {
 }
 
 async function addFact(client: MemoryV3Client, persona: string | undefined, entry: MemoryEntry, deleted: boolean) {
-  await client.addConversation({
-    agentId: factAgentId(persona),
+  await appendConversation(client, {
+    agentId: agentIdForEntry({ persona }),
     sessionId: factSessionId,
     messages: [storedRecord(JSON.stringify({
       kind: 'airi-fact',
@@ -269,9 +257,9 @@ async function deleteMessages(client: MemoryV3Client, agentId: string, messageId
 }
 
 /**
- * Chat agents whose L1, L2, and L3 the graph reads.
+ * Agent ids for chat turns, manual facts, and the graph layers.
  * The first id is {@link GENERAL_AGENT_ID}. The rest are character cards from the fact directory.
- * Manual facts live on {@link factAgentId}, not on these ids.
+ * Facts and chat turns share these ids. The fact session is {@link factSessionId}.
  */
 export async function readFactAgentIds(client: MemoryV3Client) {
   const directory = await readDirectory(client)
@@ -295,7 +283,7 @@ async function readDirectory(client: MemoryV3Client): Promise<DirectoryState> {
 async function saveDirectory(client: MemoryV3Client, state: DirectoryState) {
   if (state.messageIds.length > 0)
     await client.deleteConversation({ agentId: directoryAgentId, messageIds: state.messageIds })
-  await client.addConversation({
+  await appendConversation(client, {
     agentId: directoryAgentId,
     sessionId: directorySessionId,
     messages: [storedRecord(JSON.stringify({
@@ -307,13 +295,13 @@ async function saveDirectory(client: MemoryV3Client, state: DirectoryState) {
 }
 
 /**
- * A control record, not a chat turn.
+ * A fact or directory record, not a chat turn.
  *
  * NOTICE:
  * The role is `assistant` so MemoryCore does not start L1 extraction.
  * `handleConversationAdd` notifies the pipeline only when the batch contains a user message.
  * Source: TencentCloud/TencentDB-Agent-Memory `feat/server_team` `MemoryCore/src/gateway/v2-router.ts`.
- * Remove this role when `/v3/atomic` can create a note, or when add notifies every role.
+ * Remove this role when that gateway notifies a batch that has no user message.
  */
 function storedRecord(content: string) {
   return { role: 'assistant' as const, content }
