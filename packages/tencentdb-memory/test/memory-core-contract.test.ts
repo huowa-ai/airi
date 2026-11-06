@@ -9,6 +9,7 @@ import { batchStartsExtraction, deleteExactMessages, factRecordRole, memoryCoreC
 describe('memoryCore contract', () => {
   it('keeps fact batches off the extraction path', () => {
     expect(memoryCoreCapabilities.extractsOnUserMessage).toBe(true)
+    expect(memoryCoreCapabilities.longTermSearchOmitsSession).toBe(true)
     expect(factRecordRole()).toBe('assistant')
     expect(batchStartsExtraction([{ role: factRecordRole() }])).toBe(false)
     expect(batchStartsExtraction([

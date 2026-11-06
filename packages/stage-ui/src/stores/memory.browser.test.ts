@@ -320,4 +320,63 @@ describe('memory store', () => {
     expect(adds.every(item => item.agent_id === 'card-1')).toBe(true)
     expect(adds.map(item => item.session_id)).toEqual(['session-private', 'session-group'])
   })
+
+  it('recalls a fact from an earlier session and keeps other users and agents out', async () => {
+    const searches: Array<{ team_id?: string, user_id?: string, agent_id?: string, session_id?: string, query?: string }> = []
+    const searchHeaders: string[][] = []
+    let completedAdds = 0
+    let holdAdds = true
+    let releaseAdds = () => {}
+    const addsHeld = new Promise<void>((resolve) => {
+      releaseAdds = resolve
+    })
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      const body = typeof init?.body === 'string'
+        ? JSON.parse(init.body) as { team_id?: string, user_id?: string, agent_id?: string, session_id?: string, query?: string }
+        : undefined
+      if (url.includes('/v3/conversation/search') && body) {
+        searches.push(body)
+        searchHeaders.push([...new Headers(init?.headers).keys()])
+      }
+      if (holdAdds && url.includes('/v3/conversation/add'))
+        await addsHeld
+      const response = await gateway.fetch(input, init)
+      if (url.includes('/v3/conversation/add'))
+        completedAdds += 1
+      return response
+    })
+    const memory = createStore()
+    await memory.ready()
+    const fact = '我喜欢吃西瓜'
+    const turn = {
+      personaId: 'card-1',
+      assistantText: '好的。',
+      timestamp: '2026-11-01T00:00:00.000Z',
+    }
+
+    expect(memory.recordChatTurn({ ...turn, sessionId: 'session-a', turnId: 'turn-a', userText: fact })).toBe(true)
+    const early = await memory.prepareRecall({ sessionId: 'session-b', personaId: 'card-1', query: '西瓜' })
+    const current = await memory.prepareRecall({ sessionId: 'session-a', personaId: 'card-1', query: '西瓜' })
+
+    expect(early.map(hit => hit.text).join('\n')).not.toContain(fact)
+    expect(current.map(hit => hit.text).join('\n')).toContain(fact)
+    expect(current.every(hit => hit.source === 'recent')).toBe(true)
+
+    holdAdds = false
+    releaseAdds()
+    await vi.waitFor(() => expect(completedAdds).toBe(1))
+    const later = await memory.prepareRecall({ sessionId: 'session-b', personaId: 'card-1', query: '西瓜' })
+    const otherAgent = await memory.prepareRecall({ sessionId: 'session-b', personaId: 'card-2', query: '西瓜' })
+    const otherUser = await memory.prepareRecall({ sessionId: 'session-b', personaId: 'card-1', speakerId: 'user-2', query: '西瓜' })
+
+    expect(later.map(hit => hit.text).join('\n')).toContain(fact)
+    expect(otherAgent.map(hit => hit.text).join('\n')).not.toContain(fact)
+    expect(otherUser.map(hit => hit.text).join('\n')).not.toContain(fact)
+    expect(searches.some(item => item.session_id !== undefined)).toBe(false)
+    expect(searchHeaders.some(names => names.includes('x-tdai-service-id'))).toBe(false)
+    expect(searches.some(item => item.agent_id === 'card-1' && item.query === '西瓜')).toBe(true)
+    expect(searches.some(item => item.agent_id === 'card-2')).toBe(true)
+    expect(searches.some(item => item.user_id === 'user-2')).toBe(true)
+  })
 })

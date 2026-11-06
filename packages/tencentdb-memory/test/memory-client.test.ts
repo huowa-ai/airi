@@ -5,7 +5,8 @@ import { createServer } from 'node:http'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { createMemoryClient, MemoryClientError } from '../src/memory-client'
+import { createMemoryClient, MemoryClientError, serviceIdHeader } from '../src/memory-client'
+import { searchLongTerm } from '../src/memory-core-contract'
 
 const secret = 'example-key'
 const endpointPath = '/v3/conversation/add'
@@ -147,6 +148,28 @@ describe('memory v3 client', () => {
     })
   })
 
+  it('omits session_id for a long-term search', async () => {
+    const gateway = await fakeGateway(() => ({
+      body: {
+        code: 0,
+        message: 'ok',
+        data: { messages: [] },
+      },
+    }))
+    const memory = client(gateway.endpoint)
+
+    await searchLongTerm(memory, { query: '西瓜', agentId: 'card-1', limit: 5 })
+
+    expect(gateway.captured[0]?.body).toMatchObject({
+      query: '西瓜',
+      team_id: 'team-1',
+      user_id: 'user-1',
+      agent_id: 'card-1',
+      limit: 5,
+    })
+    expect(gateway.captured[0]?.body).not.toHaveProperty('session_id')
+  })
+
   it('sends the bearer token and the service id when they are set', async () => {
     const gateway = await fakeGateway(() => ({
       body: {
@@ -165,6 +188,12 @@ describe('memory v3 client', () => {
     expect(gateway.captured[0]?.authorization).toBe(`Bearer ${secret}`)
     expect(gateway.captured[0]?.serviceId).toBe('service-1')
     expect(gateway.captured[0]?.requestId).toBeUndefined()
+  })
+
+  it('omits the default service id from a browser document and keeps a custom id', () => {
+    expect(serviceIdHeader('default', true)).toEqual({})
+    expect(serviceIdHeader('service-1', true)).toEqual({ 'x-tdai-service-id': 'service-1' })
+    expect(serviceIdHeader('default', false)).toEqual({ 'x-tdai-service-id': 'default' })
   })
 
   it('redacts the key and the endpoint from a gateway error', async () => {

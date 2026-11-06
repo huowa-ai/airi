@@ -9,17 +9,20 @@ import { MemoryClientError } from './memory-client'
  * `extractsOnUserMessage`: L1 extraction starts only when the batch has a user message.
  * `acceptsCallerMessageId`: `conversation/add` does not accept a caller message id.
  * `messageDeleteIsExact`: one message id deletes one L0 row. A session id deletes the whole session.
+ * `longTermSearchOmitsSession`: `conversation/search` without `session_id` searches every session in the team, the user, and the agent. A `session_id` keeps only that session.
  */
 export interface MemoryCoreCapabilities {
   readonly extractsOnUserMessage: true
   readonly acceptsCallerMessageId: false
   readonly messageDeleteIsExact: true
+  readonly longTermSearchOmitsSession: true
 }
 
 export const memoryCoreCapabilities: MemoryCoreCapabilities = {
   extractsOnUserMessage: true,
   acceptsCallerMessageId: false,
   messageDeleteIsExact: true,
+  longTermSearchOmitsSession: true,
 }
 
 /**
@@ -51,6 +54,27 @@ export function batchNotifiesExtraction(messages: readonly { role: string }[]) {
  */
 export function factRecordRole(): 'assistant' {
   return 'assistant'
+}
+
+/**
+ * Searches L0 for one team, one user, and one agent.
+ * The call does not send a session id. The gateway keeps one session when that field is present.
+ * The recent-turn buffer stays on the current session. This function does not read that buffer.
+ */
+export function searchLongTerm(client: MemoryV3Client, input: {
+  query: string
+  agentId: string
+  teamId?: string
+  userId?: string
+  limit?: number
+}) {
+  return client.searchConversation({
+    query: input.query,
+    agentId: input.agentId,
+    ...(input.limit === undefined ? {} : { limit: input.limit }),
+    ...(input.teamId === undefined ? {} : { teamId: input.teamId }),
+    ...(input.userId === undefined ? {} : { userId: input.userId }),
+  })
 }
 
 /**
