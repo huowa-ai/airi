@@ -3,7 +3,7 @@ import type { PresenceBubbleState } from '@proj-airi/stage-shared'
 
 import type { Live2DEyeFocusSource, Live2DTouch } from '../../composables/live2d'
 import type { Live2DContext } from '../../contexts/live2d'
-import type { Live2DParameterMapping } from '../../controls/parameter-mapping'
+import type { Live2DParameterMapping, Live2DParameterProbeCache } from '../../controls/parameter-mapping'
 
 import { presenceBubbleIdle } from '@proj-airi/stage-shared'
 import { useScreenAmbientLightEnvironment, useSettingsScreenAmbientLight } from '@proj-airi/stage-shared/stores/screen-ambient-light'
@@ -30,6 +30,10 @@ const props = withDefaults(defineProps<{
   modelId?: string
   /** Card mapping for the selected Live2D avatar model. */
   parameterMapping?: Live2DParameterMapping
+  /** Hash of the model file. The measurement cache applies only when it matches. */
+  modelHash?: string
+  /** Measurement cache from the character card. */
+  parameterProbe?: Live2DParameterProbeCache
   /** Scene painted inside the canvas, behind the model. */
   backgroundUrl?: string | null
 
@@ -260,6 +264,8 @@ defineExpose({
         :model-src="modelSrc"
         :model-id="modelId"
         :parameter-mapping="parameterMapping"
+        :model-hash="modelHash"
+        :parameter-probe="parameterProbe"
         :app="app"
         :mouth-open-size="mouthOpenSize"
         :now-speaking="nowSpeaking"

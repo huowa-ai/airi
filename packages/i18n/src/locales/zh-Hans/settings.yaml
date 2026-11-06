@@ -250,9 +250,19 @@ live2d:
       description: AIRI 写入这些通道。角色卡映射优先。其次是模型结构。参数名是最后的来源。
       layer:
         card: 角色卡
+        probe: 测量
         structural: 结构
         name: 参数名
         default: 默认
+      detect:
+        action: 检测动作
+        running: 正在检测
+        description: 在画面外的模型副本上测量。屏幕上的角色保持不动。模型文件变了才会再测。
+        cached: 这次测量对应当前模型文件。
+      unused:
+        title: 会动但未使用的参数
+        description: 这些参数会带动网格，但还没有进入跟随通道。
+        add: 加入{channel}
       columns:
         parameter: 参数
         scale: 缩放

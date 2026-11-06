@@ -1,6 +1,6 @@
 import type { AvatarModelReference } from '@proj-airi/core-character'
 
-import type { Live2DParameterMapping } from '../controls/parameter-mapping'
+import type { Live2DParameterMapping, Live2DParameterProbeCache } from '../controls/parameter-mapping'
 
 /**
  * Stores the controls that a Live2D Avatar Model does not expose.
@@ -15,6 +15,8 @@ export interface Live2DControlPolicy {
   disabledMotions: string[]
   /** Authoritative bindings shipped or edited for this avatar model. */
   parameterMapping?: Live2DParameterMapping
+  /** Mesh measurement for one model file. A new file hash ignores it. */
+  parameterProbe?: Live2DParameterProbeCache
   /**
    * When true, MAGIC motion clears mouth opening.
    * When false, MAGIC motion writes mouth opening.
