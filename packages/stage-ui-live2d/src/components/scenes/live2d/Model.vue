@@ -11,6 +11,7 @@ import type { Cubism4ModelSettings } from 'pixi-live2d-display/cubism4'
 
 import type { Live2DFocusTarget, Live2DTouch, PixiLive2DInternalModel } from '../../../composables/live2d'
 import type { Live2DExpressionControl } from '../../../controls/manifest'
+import type { Live2DParameterChannel, Live2DParameterMapping, Live2DPhysicsSettingsSource } from '../../../controls/parameter-mapping'
 
 import { Point } from '@pixi/math'
 import { listenBeatSyncBeatSignal } from '@proj-airi/stage-shared/beat-sync'
@@ -40,6 +41,7 @@ import {
   live2DFocusTargetFromModelPoint,
   resolveLive2DFocusTargetMode,
   resolveLive2DTouchRegion,
+  useLive2DIdleEyeFocus,
   useLive2DMotionManagerUpdate,
   useMotionUpdatePluginAutoEyeBlink,
   useMotionUpdatePluginBeatSync,
@@ -55,8 +57,18 @@ import {
 import { useFitModel } from '../../../composables/live2d/fit-model'
 import { Emotion, EmotionNeutralMotionName } from '../../../constants/emotions'
 import { useLive2D } from '../../../contexts/live2d'
+import {
+  emptyLive2DParameterCatalog,
+  forEachLoadedLive2DMotion,
+  installLive2DFocusMapping,
+  loadLive2DPhysicsInputIds,
+  readLive2DCoreParameterIds,
+  reportUnloadedLive2DMotion,
+  resolveLive2DParameterRig,
+  writeLive2DParameter,
+} from '../../../controls/parameter-mapping'
 import { ScreenAmbientLightFilter } from '../../../filters/screen-ambient-light'
-import { getLive2DMotionControlModelOffset, useL2dViewControl, useLive2DMotionControl, useLive2dParams } from '../../../stores'
+import { getLive2DMotionControlModelOffset, useL2dViewControl, useLive2DMotionControl, useLive2DParameterRig, useLive2dParams } from '../../../stores'
 
 const props = withDefaults(defineProps<{
   modelSrc?: string
@@ -88,6 +100,8 @@ const props = withDefaults(defineProps<{
   screenAmbientLightMode?: ScreenAmbientLightMode
   screenAmbientLightStrength?: number
   screenAmbientLightSquint?: number
+  /** Card mapping. Absent channels are resolved from the loaded model. */
+  parameterMapping?: Live2DParameterMapping
 }>(), {
   mouthOpenSize: 0,
   nowSpeaking: false,
@@ -129,6 +143,10 @@ const {
 } = storeToRefs(useLive2DMotionControl())
 
 const modelSrcRef = toRef(() => props.modelSrc)
+const parameterMapping = toRef(() => props.parameterMapping)
+const parameterCatalog = shallowRef(emptyLive2DParameterCatalog)
+const resolvedRig = computed(() => resolveLive2DParameterRig(parameterMapping.value, parameterCatalog.value))
+const parameterRigStore = useLive2DParameterRig()
 
 const modelLoading = ref(false)
 // NOTICE: boolean is sufficient; this flag is only used inside loadModel to bail out if the component unmounts mid-load.
@@ -149,6 +167,13 @@ const pixiApp = toRef(() => props.app)
 const paused = toRef(() => props.paused)
 const focusAt = toRef(() => props.focusAt)
 const model = shallowRef<Live2DModel<PixiLive2DInternalModel>>()
+
+function writeMappedParameter(channel: Live2DParameterChannel, value: number) {
+  const coreModel = model.value?.internalModel.coreModel
+  if (!coreModel)
+    return
+  writeLive2DParameter(coreModel, resolvedRig.value, channel, value)
+}
 const initialModelWidth = ref<number>(0)
 const initialModelHeight = ref<number>(0)
 const mouthOpenSize = computed(() => Math.max(0, Math.min(100, props.mouthOpenSize)))
@@ -398,7 +423,14 @@ async function performModelLoad() {
     const coreModel = internalModel.coreModel
     const motionManager = internalModel.motionManager
     disableLive2DSdkBreath(internalModel)
-    coreModel.setParameterValueById('ParamMouthOpenY', mouthOpenSize.value)
+    const physicsSettings = internalModel.settings as Live2DPhysicsSettingsSource | undefined
+    parameterCatalog.value = {
+      parameterIds: readLive2DCoreParameterIds(coreModel),
+      physicsInputIds: await loadLive2DPhysicsInputIds(physicsSettings),
+    }
+    parameterRigStore.publishCatalog(parameterCatalog.value)
+    installLive2DFocusMapping(internalModel, () => resolvedRig.value, () => parameterRigStore.probe)
+    writeMappedParameter('mouthOpen', mouthOpenSize.value)
 
     availableMotions.value = Object
       .entries(motionManager.definitions)
@@ -427,7 +459,10 @@ async function performModelLoad() {
       if (groupIndex !== undefined && motionManager.motionGroups[groupIndex]) {
         const motionIndex = Number.parseInt(selectedMotionIndex)
         const motion = motionManager.motionGroups[groupIndex][motionIndex]
-        if (motion && motion._looper) {
+        if (!motion) {
+          reportUnloadedLive2DMotion()
+        }
+        else if (motion._looper) {
           // Force the motion to loop
           motion._looper.loopDuration = 0 // 0 means infinite loop
           console.info('Configured motion to loop infinitely:', selectedMotionGroup, motionIndex)
@@ -449,17 +484,20 @@ async function performModelLoad() {
     // This is too hacky
     // FIXME: it cannot blink if loading a model only have idle motion
     if (motionManager.groups.idle) {
-      motionManager.motionGroups[motionManager.groups.idle]?.forEach((motion) => {
-        motion._motionData.curves.forEach((curve: any) => {
-        // TODO: After emotion mapper, stage editor, eye related parameters should be take cared to be dynamical instead of hardcoding
-          if (curve.id === 'ParamEyeBallX' || curve.id === 'ParamEyeBallY') {
+      const eyeParameterIds = new Set([
+        ...resolvedRig.value.channels.eyeBallX.bindings.map(binding => binding.paramId),
+        ...resolvedRig.value.channels.eyeBallY.bindings.map(binding => binding.paramId),
+      ])
+      forEachLoadedLive2DMotion(motionManager.motionGroups[motionManager.groups.idle], (motion) => {
+        for (const curve of motion._motionData.curves) {
+          if (curve.id && eyeParameterIds.has(curve.id))
             curve.id = `_${curve.id}`
-          }
-        })
+        }
       })
     }
 
     // This is hacky too
+    const idleEyeFocus = useLive2DIdleEyeFocus(() => resolvedRig.value)
     const motionManagerUpdate = useLive2DMotionManagerUpdate({
       internalModel,
       motionManager,
@@ -471,11 +509,12 @@ async function performModelLoad() {
       live2dAutoBlinkEnabled,
       live2dForceAutoBlinkEnabled,
       lastUpdateTime,
+      parameterRig: () => resolvedRig.value,
     })
 
     motionManagerUpdate.register(useMotionUpdatePluginBeatSync(beatSync), 'pre')
-    motionManagerUpdate.register(useMotionUpdatePluginIdleDisable(), 'pre')
-    motionManagerUpdate.register(useMotionUpdatePluginIdleFocus(), 'post')
+    motionManagerUpdate.register(useMotionUpdatePluginIdleDisable(idleEyeFocus), 'pre')
+    motionManagerUpdate.register(useMotionUpdatePluginIdleFocus(idleEyeFocus), 'post')
     // Both run in 'final' stage (ignores handled state).
     // Expression first: sets desired parameter values (e.g. closed eyes = 0).
     // Blink second: reads post-expression eye values, Multiply-modulates on top.
@@ -529,9 +568,9 @@ async function performModelLoad() {
     })
 
     // Apply all stored parameters to the model
-    coreModel.setParameterValueById('ParamAngleX', modelParameters.value.angleX)
-    coreModel.setParameterValueById('ParamAngleY', modelParameters.value.angleY)
-    coreModel.setParameterValueById('ParamAngleZ', modelParameters.value.angleZ)
+    writeMappedParameter('headAngleX', modelParameters.value.angleX)
+    writeMappedParameter('headAngleY', modelParameters.value.angleY)
+    writeMappedParameter('headAngleZ', modelParameters.value.angleZ)
     coreModel.setParameterValueById('ParamEyeLOpen', modelParameters.value.leftEyeOpen)
     coreModel.setParameterValueById('ParamEyeROpen', modelParameters.value.rightEyeOpen)
     coreModel.setParameterValueById('ParamEyeSmile', modelParameters.value.leftEyeSmile)
@@ -543,13 +582,13 @@ async function performModelLoad() {
     coreModel.setParameterValueById('ParamBrowRAngle', modelParameters.value.rightEyebrowAngle)
     coreModel.setParameterValueById('ParamBrowLForm', modelParameters.value.leftEyebrowForm)
     coreModel.setParameterValueById('ParamBrowRForm', modelParameters.value.rightEyebrowForm)
-    coreModel.setParameterValueById('ParamMouthOpenY', modelParameters.value.mouthOpen)
-    coreModel.setParameterValueById('ParamMouthForm', modelParameters.value.mouthForm)
+    writeMappedParameter('mouthOpen', modelParameters.value.mouthOpen)
+    writeMappedParameter('mouthForm', modelParameters.value.mouthForm)
     coreModel.setParameterValueById('ParamCheek', modelParameters.value.cheek)
-    coreModel.setParameterValueById('ParamBodyAngleX', modelParameters.value.bodyAngleX)
-    coreModel.setParameterValueById('ParamBodyAngleY', modelParameters.value.bodyAngleY)
-    coreModel.setParameterValueById('ParamBodyAngleZ', modelParameters.value.bodyAngleZ)
-    coreModel.setParameterValueById('ParamBreath', modelParameters.value.breath)
+    writeMappedParameter('bodyAngleX', modelParameters.value.bodyAngleX)
+    writeMappedParameter('bodyAngleY', modelParameters.value.bodyAngleY)
+    writeMappedParameter('bodyAngleZ', modelParameters.value.bodyAngleZ)
+    writeMappedParameter('breath', modelParameters.value.breath)
 
     // Save SDK manager references so they can be restored if expression is
     // toggled off at runtime.
@@ -758,26 +797,9 @@ watch(currentMotion, value => setMotion(value.group, value.index))
 watch(paused, value => value ? pixiApp.value?.stop() : pixiApp.value?.start())
 
 // Watch and apply model parameters
-watch(() => modelParameters.value.angleX, (value) => {
-  if (model.value) {
-    const internalModel = model.value.internalModel
-    internalModel.coreModel.setParameterValueById('ParamAngleX', value)
-  }
-})
-
-watch(() => modelParameters.value.angleY, (value) => {
-  if (model.value) {
-    const internalModel = model.value.internalModel
-    internalModel.coreModel.setParameterValueById('ParamAngleY', value)
-  }
-})
-
-watch(() => modelParameters.value.angleZ, (value) => {
-  if (model.value) {
-    const internalModel = model.value.internalModel
-    internalModel.coreModel.setParameterValueById('ParamAngleZ', value)
-  }
-})
+watch(() => modelParameters.value.angleX, value => writeMappedParameter('headAngleX', value))
+watch(() => modelParameters.value.angleY, value => writeMappedParameter('headAngleY', value))
+watch(() => modelParameters.value.angleZ, value => writeMappedParameter('headAngleZ', value))
 
 watch(() => modelParameters.value.leftEyeOpen, (value) => {
   if (model.value) {
@@ -793,19 +815,8 @@ watch(() => modelParameters.value.rightEyeOpen, (value) => {
   }
 })
 
-watch(() => modelParameters.value.mouthOpen, (value) => {
-  if (model.value) {
-    const internalModel = model.value.internalModel
-    internalModel.coreModel.setParameterValueById('ParamMouthOpenY', value)
-  }
-})
-
-watch(() => modelParameters.value.mouthForm, (value) => {
-  if (model.value) {
-    const internalModel = model.value.internalModel
-    internalModel.coreModel.setParameterValueById('ParamMouthForm', value)
-  }
-})
+watch(() => modelParameters.value.mouthOpen, value => writeMappedParameter('mouthOpen', value))
+watch(() => modelParameters.value.mouthForm, value => writeMappedParameter('mouthForm', value))
 
 watch(() => modelParameters.value.cheek, (value) => {
   if (model.value) {
@@ -814,33 +825,10 @@ watch(() => modelParameters.value.cheek, (value) => {
   }
 })
 
-watch(() => modelParameters.value.bodyAngleX, (value) => {
-  if (model.value) {
-    const internalModel = model.value.internalModel
-    internalModel.coreModel.setParameterValueById('ParamBodyAngleX', value)
-  }
-})
-
-watch(() => modelParameters.value.bodyAngleY, (value) => {
-  if (model.value) {
-    const internalModel = model.value.internalModel
-    internalModel.coreModel.setParameterValueById('ParamBodyAngleY', value)
-  }
-})
-
-watch(() => modelParameters.value.bodyAngleZ, (value) => {
-  if (model.value) {
-    const internalModel = model.value.internalModel
-    internalModel.coreModel.setParameterValueById('ParamBodyAngleZ', value)
-  }
-})
-
-watch(() => modelParameters.value.breath, (value) => {
-  if (model.value) {
-    const internalModel = model.value.internalModel
-    internalModel.coreModel.setParameterValueById('ParamBreath', value)
-  }
-})
+watch(() => modelParameters.value.bodyAngleX, value => writeMappedParameter('bodyAngleX', value))
+watch(() => modelParameters.value.bodyAngleY, value => writeMappedParameter('bodyAngleY', value))
+watch(() => modelParameters.value.bodyAngleZ, value => writeMappedParameter('bodyAngleZ', value))
+watch(() => modelParameters.value.breath, value => writeMappedParameter('breath', value))
 
 // Watch eyebrow parameters
 watch(() => modelParameters.value.leftEyebrowLR, (value) => {

@@ -16,7 +16,7 @@ import localeMessages from '@proj-airi/i18n/locales'
 import { errorMessageFrom } from '@moeru/std'
 import { useLocalStorageManualReset } from '@proj-airi/stage-shared/composables'
 import { inspectLive2DModelControls } from '@proj-airi/stage-ui-live2d/controls/manifest'
-import { isLive2DControlEnabled } from '@proj-airi/stage-ui-live2d/controls/policy'
+import { copyLive2DControlPolicy, isLive2DControlEnabled } from '@proj-airi/stage-ui-live2d/controls/policy'
 import { StorageSerializers } from '@vueuse/core'
 import { isEqual } from 'es-toolkit'
 import { nanoid } from 'nanoid'
@@ -543,10 +543,7 @@ export const useAiriCardStore = defineStore('airi-card', () => {
       ...avatarModel,
       config: {
         ...avatarModel.config,
-        controls: {
-          disabledExpressions: [...policy.disabledExpressions],
-          disabledMotions: [...policy.disabledMotions],
-        },
+        controls: copyLive2DControlPolicy(policy),
       },
     }
     cards.value.set(characterId, {

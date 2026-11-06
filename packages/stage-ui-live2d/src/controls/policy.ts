@@ -1,4 +1,7 @@
 import type { Live2DControlPolicy } from '../types/avatar-model'
+import type { Live2DParameterBinding, Live2DParameterMapping } from './parameter-mapping'
+
+import { live2dParameterChannels } from './parameter-mapping'
 
 /** Identifies one expression or motion in a Live2D model. */
 export type Live2DControlTarget
@@ -10,6 +13,35 @@ export function createLive2DControlPolicy(): Live2DControlPolicy {
   return {
     disabledExpressions: [],
     disabledMotions: [],
+  }
+}
+
+function copyBinding(binding: Live2DParameterBinding): Live2DParameterBinding {
+  return {
+    paramId: binding.paramId,
+    ...(binding.scale !== undefined ? { scale: binding.scale } : {}),
+    ...(binding.offset !== undefined ? { offset: binding.offset } : {}),
+  }
+}
+
+function copyParameterMapping(mapping: Live2DParameterMapping): Live2DParameterMapping {
+  const copy: Live2DParameterMapping = {}
+  for (const channel of live2dParameterChannels) {
+    const bindings = mapping[channel]
+    if (!bindings)
+      continue
+    copy[channel] = bindings.map(copyBinding)
+  }
+  return copy
+}
+
+/** Returns a policy copy that keeps the parameter mapping and the mouth override. */
+export function copyLive2DControlPolicy(policy: Live2DControlPolicy): Live2DControlPolicy {
+  return {
+    disabledExpressions: [...policy.disabledExpressions],
+    disabledMotions: [...policy.disabledMotions],
+    ...(policy.parameterMapping ? { parameterMapping: copyParameterMapping(policy.parameterMapping) } : {}),
+    ...(typeof policy.skipMouthOpen === 'boolean' ? { skipMouthOpen: policy.skipMouthOpen } : {}),
   }
 }
 
@@ -42,12 +74,14 @@ export function updateLive2DControlPolicy(
     ? disabledIds.filter(id => id !== target.id)
     : [...new Set([...disabledIds, target.id])]
 
-  return {
+  return copyLive2DControlPolicy({
     disabledExpressions: target.kind === 'expression'
       ? nextDisabledIds
       : [...policy.disabledExpressions],
     disabledMotions: target.kind === 'motion'
       ? nextDisabledIds
       : [...policy.disabledMotions],
-  }
+    parameterMapping: policy.parameterMapping,
+    skipMouthOpen: policy.skipMouthOpen,
+  })
 }

@@ -29,4 +29,19 @@ describe('live2D control policy', () => {
 
     expect(updateLive2DControlPolicy(disabled, { kind: 'expression', id: 'happy' }, true)).toEqual(policy)
   })
+
+  it('keeps the parameter mapping when one expression changes', () => {
+    const policy = {
+      ...createLive2DControlPolicy(),
+      parameterMapping: { headAngleX: [{ paramId: 'AngleX' }, { paramId: 'ParamAngleX', scale: 1 }] },
+      skipMouthOpen: false,
+    }
+    const next = updateLive2DControlPolicy(policy, { kind: 'motion', id: 'idle.motion3.json' }, false)
+
+    expect(next.disabledMotions).toEqual(['idle.motion3.json'])
+    expect(next.parameterMapping).toEqual(policy.parameterMapping)
+    expect(next.skipMouthOpen).toBe(false)
+    expect(policy.disabledMotions).toEqual([])
+    expect(next.parameterMapping).not.toBe(policy.parameterMapping)
+  })
 })

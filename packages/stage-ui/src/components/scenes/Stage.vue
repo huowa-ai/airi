@@ -258,6 +258,9 @@ const backgroundStore = useBackgroundStore()
 const { activeBackgroundUrl } = storeToRefs(backgroundStore)
 
 const { currentMotion } = storeToRefs(useLive2dParams())
+const live2dParameterMapping = computed(() => selectedAvatarModel.value?.type === 'live2d'
+  ? selectedAvatarModel.value.config.controls.parameterMapping
+  : undefined)
 const live2d = createLive2D({
   controlPolicy: () => selectedAvatarModel.value?.type === 'live2d'
     ? selectedAvatarModel.value.config.controls
@@ -717,6 +720,7 @@ defineExpose({
         h-full w-full flex-1
         :model-src="stageModelSelectedUrl"
         :model-id="stageModelSelected"
+        :parameter-mapping="live2dParameterMapping"
         :background-url="activeBackgroundUrl"
         :cursor-position="cursorPosition"
         :mouth-open-size="mouthOpenSize"

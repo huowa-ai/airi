@@ -245,6 +245,41 @@ live2d:
       description: 限制渲染帧率
     shadow: 投影
     reset-parameters: 重置为默认参数
+    mapping:
+      title: 参数映射
+      description: AIRI 写入这些通道。角色卡映射优先。其次是物理输入。参数名是最后的来源。
+      layer:
+        card: 角色卡
+        physics: 物理
+        name: 参数名
+        default: 默认
+      columns:
+        parameter: 参数
+        scale: 缩放
+        offset: 偏移
+      actions:
+        test: 测试
+        add: 添加参数
+        remove: 移除
+        reset: 使用检测结果
+      skip-mouth:
+        title: 此模型的嘴部开合
+        description: 自动跟随全局设置。此模型映射了嘴部开合时，自动驱动嘴部。
+        auto: 自动
+        skip: 跳过
+        drive: 驱动嘴部
+      channels:
+        head-angle-x: 头部角度 X
+        head-angle-y: 头部角度 Y
+        head-angle-z: 头部角度 Z
+        body-angle-x: 身体角度 X
+        body-angle-y: 身体角度 Y
+        body-angle-z: 身体角度 Z
+        eye-ball-x: 眼睛 X
+        eye-ball-y: 眼睛 Y
+        mouth-open: 嘴部开合
+        mouth-form: 嘴型
+        breath: 呼吸
   clear-model-cache: 清除模型缓存
   expressions:
     title: 表情
