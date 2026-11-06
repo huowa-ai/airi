@@ -440,10 +440,9 @@ describe('chat session synchronization', () => {
   it('keeps a new conversation selected after its first synchronized message for Issue #2595', async () => {
     // ROOT CAUSE:
     //
-    // The leader creates the session while the caller selects it locally.
-    // The first message then synchronizes a new index ref. An index watcher
-    // treated that data update as navigation and restored the old session.
-    // Shared index updates no longer control window-local navigation.
+    // The first message synchronizes a new index ref. An index watcher
+    // restored the old session. An index update does not navigate.
+    // The displayed id syncs on its own, so both windows stay on the new one.
     const namespace = `chat-session:${crypto.randomUUID()}`
     const leaderContext = createSyncedContext(namespace, 'leader-only')
     await vi.waitFor(() => expect(leaderContext.runtime.isLeader()).toBe(true))
@@ -473,6 +472,50 @@ describe('chat session synchronization', () => {
 
     expect(previousSessionId).not.toBe(newSessionId)
     expect(followerChatStore.activeSessionId).toBe(newSessionId)
+    await vi.waitFor(() => expect(leaderChatStore.activeSessionId).toBe(newSessionId))
+  })
+
+  it('shows the main window session in a follower window', async () => {
+    const namespace = `chat-session:${crypto.randomUUID()}`
+    const leaderContext = createSyncedContext(namespace, 'leader-only')
+    await vi.waitFor(() => expect(leaderContext.runtime.isLeader()).toBe(true))
+
+    setActivePinia(leaderContext.pinia)
+    const leaderChatStore = useChatSessionStore()
+    await leaderChatStore.initialize()
+
+    const followerContext = createSyncedContext(namespace, 'follower-only')
+    setActivePinia(followerContext.pinia)
+    const followerChatStore = useChatSessionStore()
+    await vi.waitFor(() => expect(followerContext.runtime.getLeaderId()).toBe(leaderContext.runtime.participantId))
+    await followerChatStore.initialize()
+    await vi.waitFor(() => expect(followerChatStore.activeSessionId).toBe(leaderChatStore.activeSessionId))
+
+    const previousSessionId = leaderChatStore.activeSessionId
+    const nextSessionId = await leaderChatStore.createSession('default', { setActive: false })
+    expect(leaderChatStore.activeSessionId).toBe(previousSessionId)
+    expect(followerChatStore.activeSessionId).toBe(previousSessionId)
+
+    await leaderChatStore.setActiveSession(nextSessionId)
+    await vi.waitFor(() => expect(followerChatStore.activeSessionId).toBe(nextSessionId))
+
+    leaderChatStore.appendSessionMessage(nextSessionId, {
+      id: 'voice-user',
+      role: 'user',
+      content: 'Hello from the call',
+    })
+    await vi.waitFor(() => expect(followerChatStore.sessionMessages[nextSessionId]?.at(-1)?.content).toBe('Hello from the call'))
+    expect(followerChatStore.messages.at(-1)?.content).toBe('Hello from the call')
+
+    const savedIndex = leaderChatStore.getSnapshot().index
+    if (savedIndex)
+      leaderChatStore.index = savedIndex
+    await vi.waitFor(() => expect(followerChatStore.activeSessionId).toBe(nextSessionId))
+    expect(leaderChatStore.activeSessionId).toBe(nextSessionId)
+
+    const floatingSessionId = await followerChatStore.createSession('default', { setActive: false })
+    await followerChatStore.setActiveSession(floatingSessionId)
+    await vi.waitFor(() => expect(leaderChatStore.activeSessionId).toBe(floatingSessionId))
   })
 
   it('keeps the leader chat snapshot when new followers receive the auth identity', async () => {
