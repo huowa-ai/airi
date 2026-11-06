@@ -16,6 +16,8 @@ The `model-assets` entrypoint owns model file manifests, download status, and
 the storage adapter contract. Use a platform adapter to store and open files.
 It does not own a recognizer or Worker.
 
+`resolveServerUrl` in `src/env-vars.ts` picks the AIRI API origin. `VITE_SERVER_URL` wins. Development uses the local gateway. Production uses the hosted API.
+
 The `speaker-model` entrypoint pins the CAM++ speaker embedding pack. The renderer and the Electron main process both read it:
 
 ```ts

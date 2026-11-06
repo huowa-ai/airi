@@ -30,3 +30,29 @@ export function isCapacitorAvailable(): boolean {
 export function isCustomProvidersDisabled(): boolean {
   return isEnvTruthy(import.meta.env.VITE_DISABLE_CUSTOM_PROVIDERS)
 }
+
+/** Hosted AIRI API. Production uses this when `VITE_SERVER_URL` is unset. */
+export const PRODUCTION_SERVER_URL = 'https://api.airi.build'
+
+/**
+ * Local gateway from `pnpm dev:backend`.
+ * The API process listens on port 3000. Set `VITE_SERVER_URL` for another port.
+ */
+export const DEVELOPMENT_SERVER_URL = 'http://127.0.0.1:6112'
+
+export interface ServerUrlEnv {
+  DEV?: boolean
+  VITE_SERVER_URL?: string
+}
+
+/**
+ * Resolves the AIRI API origin.
+ * A set `VITE_SERVER_URL` wins. Development uses the local gateway.
+ * Production uses the hosted API.
+ */
+export function resolveServerUrl(env: ServerUrlEnv): string {
+  const configured = env.VITE_SERVER_URL?.trim().replace(/\/+$/, '')
+  if (configured)
+    return configured
+  return env.DEV ? DEVELOPMENT_SERVER_URL : PRODUCTION_SERVER_URL
+}

@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
+  readonly VITE_SERVER_URL?: string
   readonly VITE_DISTRIBUTION?: 'direct' | 'steam'
   readonly VITE_DISABLE_FLUX_PURCHASE?: string
   readonly VITE_DISABLE_CUSTOM_PROVIDERS?: string

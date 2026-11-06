@@ -1,1 +1,3 @@
-export const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'https://api.airi.build'
+import { resolveServerUrl } from '@proj-airi/stage-shared'
+
+export const SERVER_URL = resolveServerUrl(import.meta.env)
