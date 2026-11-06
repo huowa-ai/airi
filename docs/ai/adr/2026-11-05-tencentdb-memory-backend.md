@@ -204,7 +204,9 @@ The settings page can turn the memory service on. When the service is on, the ch
 
 The page calls MemoryCore over HTTP. The address, the local account id, the service id, and the optional API key are device settings. The private team is derived. The key is not in the source bundle. A later channel RPC can move the key off the page. That move is still open.
 
-A finished chat turn is L0 on the character card, or on `airi:general`. The stage uses `onChatTurnComplete`. It does not listen for `input:text`. A failed or interrupted turn writes nothing. The write is queued, so a gateway error does not block the chat.
+A finished chat turn is L0 on the character card, or on `airi:general`. The stage uses `onChatTurnComplete`. It does not listen for `input:text`. The write is queued, so a gateway error does not block the chat.
+
+A failed turn writes nothing. An interrupted turn writes the assistant text that already played, including a played filler. An interrupted turn with no played text writes nothing. ADR 2026-11-06 owns this interrupt rule.
 
 Manual facts use that same agent id. They stay in session `airi:facts`. The role is `assistant`. Facts and chat turns both call `appendConversation`. `listFacts` reads that session. The graph draws those facts and reads L1, L2, and L3 for the same agent ids. A character enters that layer list when a manual fact records the card.
 

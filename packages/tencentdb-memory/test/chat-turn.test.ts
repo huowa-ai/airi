@@ -58,8 +58,52 @@ describe('chat turn capture', () => {
     expect(decideChatTurn(turn({ userText: '😀 👍' }))).toEqual({ action: 'skip', reason: 'emoji' })
     expect(decideChatTurn(turn({ userText: 'tea 😀' })).action).toBe('write')
     expect(decideChatTurn(turn({ userText: '', imageOnly: true }))).toEqual({ action: 'skip', reason: 'image' })
-    expect(decideChatTurn(turn({ interrupted: true }))).toEqual({ action: 'skip', reason: 'interrupted' })
     expect(decideChatTurn(turn({ failed: true }))).toEqual({ action: 'skip', reason: 'failed' })
+    expect(decideChatTurn(turn({ failed: true, interrupted: true, assistantText: 'Played.' }))).toEqual({ action: 'skip', reason: 'failed' })
+  })
+
+  it('writes an interrupted turn when assistant text already played', () => {
+    const decision = decideChatTurn(turn({
+      interrupted: true,
+      userText: 'Where is the tea?',
+      assistantText: 'The garden needs water.',
+    }))
+
+    expect(decision.action).toBe('write')
+    if (decision.action !== 'write')
+      return
+    expect(decision.input.messages).toEqual([
+      { role: 'user', content: 'Where is the tea?', timestamp },
+      { role: 'assistant', content: 'The garden needs water.', timestamp },
+    ])
+  })
+
+  it('writes a played filler when the turn is interrupted', () => {
+    const decision = decideChatTurn(turn({
+      interrupted: true,
+      userText: 'Where is the tea?',
+      assistantText: '嗯，我想想',
+    }))
+
+    expect(decision.action).toBe('write')
+    if (decision.action !== 'write')
+      return
+    expect(decision.input.messages[1]).toEqual({ role: 'assistant', content: '嗯，我想想', timestamp })
+  })
+
+  it('skips an interrupted turn when nothing played', () => {
+    expect(decideChatTurn(turn({ interrupted: true, assistantText: '' }))).toEqual({ action: 'skip', reason: 'interrupted' })
+    expect(decideChatTurn(turn({ interrupted: true, assistantText: '   ' }))).toEqual({ action: 'skip', reason: 'interrupted' })
+    expect(decideChatTurn(turn({
+      interrupted: true,
+      assistantText: memoryBlock,
+    }))).toEqual({ action: 'skip', reason: 'interrupted' })
+  })
+
+  it('keeps the other skip rules when playback has text', () => {
+    expect(decideChatTurn(turn({ interrupted: true, userText: '/help', assistantText: 'Played.' }))).toEqual({ action: 'skip', reason: 'command' })
+    expect(decideChatTurn(turn({ interrupted: true, userText: '😀', assistantText: 'Played.' }))).toEqual({ action: 'skip', reason: 'emoji' })
+    expect(decideChatTurn(turn({ interrupted: true, userText: '', assistantText: 'Played.' }))).toEqual({ action: 'skip', reason: 'empty' })
   })
 
   it('removes a copied system prompt and leaves the reply', () => {
@@ -111,11 +155,23 @@ describe('chat turn capture', () => {
     expect(queue.enqueue(client, turn())).toBe(false)
     expect(queue.enqueue(client, turn({ userText: '/help' }))).toBe(false)
     expect(queue.enqueue(client, turn({ turnId: 'turn-2', userText: 'The garden needs water.' }))).toBe(true)
+    expect(queue.enqueue(client, turn({
+      turnId: 'turn-cut',
+      interrupted: true,
+      userText: 'Where is the tea?',
+      assistantText: '嗯，我想想',
+    }))).toBe(true)
+    expect(queue.enqueue(client, turn({
+      turnId: 'turn-silent',
+      interrupted: true,
+      assistantText: '',
+    }))).toBe(false)
     await queue.flush()
 
     expect(calls).toEqual([
       'Ada likes tea.|I will remember that.',
       'The garden needs water.|I will remember that.',
+      'Where is the tea?|嗯，我想想',
     ])
     expect(errors).toHaveLength(1)
   })
