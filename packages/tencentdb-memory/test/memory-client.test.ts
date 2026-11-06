@@ -288,6 +288,34 @@ describe('memory v3 client', () => {
     expect(gateway.captured[0]?.requestId).toBeUndefined()
   })
 
+  it('sends message ids without a session id', async () => {
+    const gateway = await fakeGateway((request) => {
+      const body = request.body as { message_ids?: string[], session_ids?: string[] }
+      if (body.session_ids)
+        return { body: { code: 0, message: 'ok', data: { deleted_count: 4 } } }
+      return { body: { code: 0, message: 'ok', data: { deleted_count: body.message_ids?.length === 1 ? 4 : 1 } } }
+    })
+    const memory = client(gateway.endpoint)
+
+    await expect(memory.deleteConversation({ messageIds: ['msg-1'] })).resolves.toEqual({ deletedCount: 4 })
+    await expect(memory.deleteConversation({ messageIds: ['msg-1'], sessionIds: ['session-1'] })).rejects.toThrow('Delete message ids or session ids, not both.')
+    await expect(memory.deleteConversation({ sessionIds: ['session-1'] })).resolves.toEqual({ deletedCount: 4 })
+
+    expect(gateway.captured[0]?.body).toEqual({
+      team_id: 'team-1',
+      agent_id: 'card-1',
+      user_id: 'user-1',
+      message_ids: ['msg-1'],
+    })
+    expect(gateway.captured[1]?.body).toEqual({
+      team_id: 'team-1',
+      agent_id: 'card-1',
+      user_id: 'user-1',
+      session_ids: ['session-1'],
+    })
+    expect(gateway.captured[0]?.body).not.toHaveProperty('session_id')
+  })
+
   it('treats a missing persona file as empty content', async () => {
     const gateway = await fakeGateway(() => ({
       body: {

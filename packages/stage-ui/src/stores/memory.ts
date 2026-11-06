@@ -1,11 +1,11 @@
-import type { IdentityLink, IdentityMap, MemoryScope, MemoryScopeRequest, MemoryStorage, MemoryV3Client } from '@proj-airi/tencentdb-memory'
+import type { IdentityLink, IdentityMap, MemoryScope, MemoryScopeRequest, MemoryStorage, MemoryV3Client, RecallHit, WriteOutboxState } from '@proj-airi/tencentdb-memory'
 
 import type { MemoryEntry, MemoryWrite } from '../types/memory'
 import type { ChatTurnRecord } from './chat-turn-memory'
 
 import { errorMessageFrom } from '@moeru/std'
 import { useLocalStorageManualReset } from '@proj-airi/stage-shared/composables'
-import { bindMemoryScope, confirmIdentityLink, createChatTurnQueue, createMemoryClient, createRemoteMemoryStorage, GENERAL_AGENT_ID, localScopeSessionId, memoryClientEnv, parseSceneBinding, readIdentityMap, readMemoryClientConfig, readMemoryLayers, resolveLocalAccountId, resolveMemoryScope, sanitizeScopeId } from '@proj-airi/tencentdb-memory'
+import { agentIdForEntry, bindMemoryScope, confirmIdentityLink, conversationContentHash, createChatTurnQueue, createMemoryClient, createRecallBuffer, createRemoteMemoryStorage, createWriteOutbox, defaultRecallBudget, deleteExactMessages, deleteLayerRecord, deliverConversation, formatRecall, GENERAL_AGENT_ID, isForgetPhrase, localScopeSessionId, memoryClientEnv, mergeRecall, parseSceneBinding, readIdentityMap, readMemoryClientConfig, readMemoryLayers, resolveLocalAccountId, resolveMemoryScope, sanitizeScopeId } from '@proj-airi/tencentdb-memory'
 import { useBroadcastChannel } from '@vueuse/core'
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
@@ -55,9 +55,34 @@ export const useMemoryStore = defineStore('memory', () => {
   const storages = new Map<string, MemoryStorage>()
   const scopedFacts = new Map<string, MemoryEntry[]>()
   let serviceGeneration = 0
+  const buffer = createRecallBuffer()
+  const recallBlocks = new Map<string, string>()
+  const outbox = createWriteOutbox({
+    load: readWriteOutbox,
+    save: writeOutbox,
+  })
+  let retryTimer: ReturnType<typeof setTimeout> | undefined
   const chatTurns = createChatTurnQueue({
     onError: (error) => {
       console.warn('[memory] Chat turn was not stored.', errorMessageFrom(error) ?? '')
+    },
+    onSettled: (event) => {
+      const place = { teamId: event.input.teamId, userId: event.input.userId }
+      if (event.ok) {
+        buffer.attach(event.input.turnId, event.input.sessionId, event.ids, place)
+        outbox.succeeded(event.input.turnId)
+        return
+      }
+      outbox.add({
+        turnId: event.input.turnId,
+        agentId: event.prepared.agentId ?? event.input.agentId,
+        sessionId: event.prepared.sessionId,
+        teamId: event.input.teamId,
+        userId: event.input.userId,
+        contentHash: conversationContentHash(event.prepared.messages),
+        messages: event.prepared.messages,
+      })
+      scheduleRetry()
     },
   })
 
@@ -162,6 +187,7 @@ export const useMemoryStore = defineStore('memory', () => {
     storages.set(scopeKey(scope), remote)
     serviceError.value = ''
     serviceRead.value = 'loading'
+    scheduleRetry()
   }
   const { data: changed, post } = useBroadcastChannel<string[], string[]>({ name: 'airi:memory' })
   let pendingLoad = Promise.resolve()
@@ -361,25 +387,35 @@ export const useMemoryStore = defineStore('memory', () => {
     }
   }
 
+  function scopeForTurn(input: ChatTurnRecord) {
+    return resolveRequest(requestForSession({
+      sessionId: input.sessionId,
+      personaId: input.personaId,
+      binding: input.binding,
+      speakerId: input.speakerId,
+    }))
+  }
+
   /**
    * Queues one finished chat turn as L0 on the chat agent.
    * The call returns before MemoryCore answers. A write failure does not change the fact list.
    * Nothing is queued when memory is off or the service client is missing.
    */
   function recordChatTurn(input: ChatTurnRecord) {
-    const client = memoryClient
-    if (!enabled.value || !client)
+    if (isForgetPhrase(input.userText)) {
+      void forgetLatest(input)
       return false
-    const scope = resolveRequest(requestForSession({
-      sessionId: input.sessionId,
-      personaId: input.personaId,
-      binding: input.binding,
-      speakerId: input.speakerId,
-    }))
-    return chatTurns.enqueue(bindMemoryScope(client, scope), {
+    }
+    const client = memoryClient
+    if (!enabled.value || !client || outbox.isDone(input.turnId))
+      return false
+    const scope = scopeForTurn(input)
+    const queued = chatTurns.enqueue(bindMemoryScope(client, scope), {
       sessionId: scope.sessionId,
       turnId: input.turnId,
       agentId: scope.agentId,
+      teamId: scope.teamId,
+      userId: scope.userId,
       userText: input.userText,
       assistantText: input.assistantText,
       imageOnly: input.imageOnly,
@@ -388,6 +424,161 @@ export const useMemoryStore = defineStore('memory', () => {
       interrupted: input.interrupted,
       failed: input.failed,
     })
+    if (!queued)
+      return false
+    const at = Date.parse(input.timestamp)
+    buffer.note({
+      turnId: input.turnId,
+      agentId: scope.agentId,
+      sessionId: scope.sessionId,
+      teamId: scope.teamId,
+      userId: scope.userId,
+      text: `${input.userText}\n${input.assistantText}`,
+      at: Number.isFinite(at) ? at : Date.now(),
+      messageIds: [],
+    })
+    return true
+  }
+
+  /**
+   * Recall for the next prompt. Recent turns fill the gap until search returns the same text.
+   * A search failure still keeps the recent turns. The call does not throw.
+   */
+  async function prepareRecall(input: { sessionId: string, personaId: string, query: string, binding?: string, speakerId?: string }) {
+    const scope = resolveRequest(requestForSession(input))
+    const place = { teamId: scope.teamId, userId: scope.userId }
+    const recent = buffer.list(scope.agentId, scope.sessionId, place)
+    const remote = await searchRecall(input.query, scope)
+    const hits = mergeRecall({ query: input.query, remote, recent, budget: defaultRecallBudget })
+    const text = formatRecall(hits)
+    if (text)
+      recallBlocks.set(scope.sessionId, text)
+    else
+      recallBlocks.delete(scope.sessionId)
+    return hits
+  }
+
+  function recallBlock(sessionId: string) {
+    return recallBlocks.get(sessionId) ?? ''
+  }
+
+  async function forgetLatest(input: ChatTurnRecord) {
+    const scope = scopeForTurn(input)
+    const place = { teamId: scope.teamId, userId: scope.userId }
+    const newest = buffer.newest(scope.agentId, scope.sessionId, place)
+    if (!newest)
+      return false
+    buffer.drop(newest.turnId, scope.sessionId, place)
+    outbox.drop(newest.turnId)
+    recallBlocks.delete(scope.sessionId)
+    const client = memoryClient
+    if (client && newest.messageIds.length > 0) {
+      await deleteExactMessages(bindMemoryScope(client, scope), {
+        agentId: scope.agentId,
+        messageIds: newest.messageIds,
+      }).catch((error: unknown) => {
+        console.warn('[memory] Latest turn was not deleted.', errorMessageFrom(error) ?? '')
+      })
+    }
+    return true
+  }
+
+  async function deleteRecord(input: { kind: 'fact' | 'atom' | 'scene' | 'core', id: string, recordId?: string, path?: string, persona?: string, request?: MemoryScopeRequest }) {
+    const scope = resolveRequest(input.request)
+    const client = memoryClient
+    const storage = storageFor(scope)
+    if (!client || !storage)
+      return { deleted: false as const, reason: 'unavailable' as const }
+    const scoped = bindMemoryScope(client, scope)
+    const agentId = agentIdForEntry({ persona: input.persona })
+    if (input.kind === 'core')
+      return deleteLayerRecord(scoped, { layer: 'L3', agentId })
+    if (input.kind === 'fact') {
+      const deleted = await storage.destroy(input.id)
+      if (deleted)
+        await publish(scope, [input.id])
+      return { deleted, layer: 'L0' as const }
+    }
+    if (input.kind === 'atom') {
+      const result = await deleteLayerRecord(scoped, { layer: 'L1', agentId, ids: [input.recordId || input.id] })
+      await publish(scope, [input.id])
+      return result
+    }
+    const result = await deleteLayerRecord(scoped, { layer: 'L2', agentId, path: input.path || '' })
+    await publish(scope, [input.id])
+    return result
+  }
+
+  async function searchRecall(query: string, scope: MemoryScope): Promise<RecallHit[]> {
+    const client = memoryClient
+    const text = query.trim().slice(0, 2048)
+    if (!client || text === '')
+      return []
+    try {
+      const found = await bindMemoryScope(client, scope).searchConversation({
+        query: text,
+        agentId: scope.agentId,
+        sessionId: scope.sessionId,
+        limit: defaultRecallBudget.limit,
+      })
+      return found.messages.map(hit => ({
+        id: hit.id,
+        text: hit.content,
+        score: hit.score ?? 0,
+        at: 0,
+        source: 'remote' as const,
+        agentId: scope.agentId,
+        sessionId: hit.sessionId,
+        messageIds: [hit.id],
+      }))
+    }
+    catch {
+      return []
+    }
+  }
+
+  function scheduleRetry() {
+    if (retryTimer !== undefined)
+      return
+    const wait = outbox.nextWait()
+    if (wait === undefined)
+      return
+    retryTimer = setTimeout(() => {
+      retryTimer = undefined
+      void pumpOutbox()
+    }, wait)
+  }
+
+  async function pumpOutbox() {
+    const client = memoryClient
+    if (!client) {
+      scheduleRetry()
+      return
+    }
+    const due = outbox.due()
+    await Promise.all(due.map(async (row) => {
+      outbox.begin(row.turnId)
+      const place = { teamId: row.teamId, userId: row.userId }
+      try {
+        const scoped = row.teamId && row.userId
+          ? bindMemoryScope(client, { teamId: row.teamId, userId: row.userId })
+          : client
+        const result = await deliverConversation(scoped, {
+          agentId: row.agentId,
+          sessionId: row.sessionId,
+          teamId: row.teamId,
+          userId: row.userId,
+          messages: row.messages,
+          retry: true,
+        })
+        outbox.succeeded(row.turnId)
+        buffer.attach(row.turnId, row.sessionId, result.acceptedIds, place)
+      }
+      catch {
+        outbox.failed(row.turnId)
+      }
+    }))
+    scheduleRetry()
   }
 
   /** Forgets an entry of the card by its id. General memories belong to the owner, so a run cannot forget them. */
@@ -480,12 +671,38 @@ export const useMemoryStore = defineStore('memory', () => {
     read,
     write,
     recordChatTurn,
+    prepareRecall,
+    recallBlock,
+    deleteRecord,
     makeGeneral,
     forget,
     remove,
     resetState,
   }
 })
+
+const writeOutboxKey = 'memory/write-outbox'
+
+function readWriteOutbox(): WriteOutboxState {
+  try {
+    const raw = localStorage.getItem(writeOutboxKey)
+    if (!raw)
+      return { pending: [], done: [] }
+    const parsed: unknown = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object')
+      return { pending: [], done: [] }
+    const pending = 'pending' in parsed && Array.isArray(parsed.pending) ? parsed.pending as WriteOutboxState['pending'] : []
+    const done = 'done' in parsed && Array.isArray(parsed.done) ? parsed.done.filter((item): item is string => typeof item === 'string') : []
+    return { pending, done }
+  }
+  catch {
+    return { pending: [], done: [] }
+  }
+}
+
+function writeOutbox(state: WriteOutboxState) {
+  localStorage.setItem(writeOutboxKey, JSON.stringify(state))
+}
 
 function publicServiceError(error: unknown) {
   const message = errorMessageFrom(error) ?? 'The memory service request failed.'

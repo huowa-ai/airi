@@ -33,6 +33,10 @@ export interface ChatTurnInput {
   systemPrompt?: string
   /** ISO-8601 UTC time, such as `2026-11-01T00:00:00.000Z`. */
   timestamp: string
+  /** Resolved team. The retry uses this scope when the success response was lost. */
+  teamId?: string
+  /** Resolved user. The retry uses this scope when the success response was lost. */
+  userId?: string
   interrupted?: boolean
   failed?: boolean
 }
@@ -108,6 +112,13 @@ export interface ChatTurnQueue {
 export interface ChatTurnQueueOptions {
   /** Called after a write fails. It must not throw into the chat turn. */
   onError?: (error: unknown) => void
+  /** Called after the gateway accepts or rejects the batch. */
+  onSettled?: (event: {
+    input: ChatTurnInput
+    prepared: AddConversationInput
+    ok: boolean
+    ids: string[]
+  }) => void
 }
 
 /**
@@ -133,7 +144,10 @@ export function createChatTurnQueue(options: ChatTurnQueueOptions = {}): ChatTur
           seen.delete(oldest)
       }
       const prepared = decision.input
-      tail = tail.then(() => appendConversation(client, prepared)).then(() => undefined, (error: unknown) => {
+      tail = tail.then(() => appendConversation(client, prepared)).then((result) => {
+        options.onSettled?.({ input, prepared, ok: true, ids: result.acceptedIds })
+      }, (error: unknown) => {
+        options.onSettled?.({ input, prepared, ok: false, ids: [] })
         try {
           options.onError?.(error)
         }

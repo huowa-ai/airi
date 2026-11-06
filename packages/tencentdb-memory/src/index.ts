@@ -9,8 +9,11 @@ export {
   readMemoryClientConfig,
 } from './client-config'
 export type { MemoryClientConfig, MemoryClientConfigResult } from './client-config'
-export { appendConversation, batchNotifiesExtraction } from './conversation-write'
+export { appendConversation, conversationContentHash, deliverConversation } from './conversation-write'
+export type { DeliverConversationResult } from './conversation-write'
 export type { MemoryFactProjection, MemoryNotice } from './fact-projection'
+export { deleteLayerRecord, forgetPhrases, isForgetPhrase } from './layer-delete'
+export type { LayerDeleteResult } from './layer-delete'
 export { readMemoryLayers } from './layer-read'
 export type {
   MemoryAtom,
@@ -31,6 +34,8 @@ export type {
   ConversationHit,
   ConversationMessageInput,
   CoreRecord,
+  DeleteAtomicInput,
+  DeleteAtomicResult,
   DeleteConversationInput,
   DeleteConversationResult,
   ListScenariosInput,
@@ -45,10 +50,19 @@ export type {
   ReadCoreInput,
   ReadScenarioInput,
   ReadScenarioResult,
+  RemoveScenarioInput,
   ScenarioRecord,
   SearchConversationInput,
   SearchConversationResult,
 } from './memory-client'
+export {
+  batchNotifiesExtraction,
+  batchStartsExtraction,
+  deleteExactMessages,
+  factRecordRole,
+  memoryCoreCapabilities,
+} from './memory-core-contract'
+export type { MemoryCoreCapabilities } from './memory-core-contract'
 export {
   confirmIdentityLink,
   EMPTY_IDENTITY_MAP,
@@ -83,4 +97,8 @@ export type {
   MemoryStorage,
   MemoryWrite,
 } from './memory-storage'
+export { createRecallBuffer, defaultRecallBudget, formatRecall, mergeRecall } from './recall'
+export type { RecallBudget, RecallHit, RecallPlace, RecentTurn } from './recall'
 export { createRemoteMemoryStorage, factSessionId } from './remote-memory'
+export { createWriteOutbox, retryBackoffMs } from './write-outbox'
+export type { PendingWrite, WriteOutboxState } from './write-outbox'

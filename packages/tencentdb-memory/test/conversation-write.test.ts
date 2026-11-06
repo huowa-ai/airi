@@ -1,18 +1,17 @@
 import { describe, expect, it } from 'vitest'
 
-import { batchNotifiesExtraction } from '../src/conversation-write'
+import { batchStartsExtraction } from '../src/memory-core-contract'
 
 /**
- * MemoryCore `handleConversationAdd` notifies L1 extraction only when the batch
- * contains a user message. `feat/server_team` has no unit test for that branch.
- * Source: `MemoryCore/src/gateway/v2-router.ts`.
+ * Fact batches stay off extraction. The rule is `batchStartsExtraction`.
+ * A chat batch on the same agent still starts extraction.
  */
 describe('extraction notify on the shared agent', () => {
   it('does not notify a fact-only batch, and does notify a chat batch on the same agent', () => {
     const notified: Array<{ agentId: string, sessionId: string }> = []
 
     function add(agentId: string, sessionId: string, messages: Array<{ role: string }>) {
-      if (batchNotifiesExtraction(messages))
+      if (batchStartsExtraction(messages))
         notified.push({ agentId, sessionId })
     }
 

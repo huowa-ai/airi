@@ -208,11 +208,30 @@ A finished chat turn is L0 on the character card, or on `airi:general`. The stag
 
 Manual facts use that same agent id. They stay in session `airi:facts`. The role is `assistant`. Facts and chat turns both call `appendConversation`. `listFacts` reads that session. The graph draws those facts and reads L1, L2, and L3 for the same agent ids. A character enters that layer list when a manual fact records the card.
 
-This fact role depends on MemoryCore. `handleConversationAdd` notifies L1 extraction only when the batch contains a user message. The source is `feat/server_team` `MemoryCore/src/gateway/v2-router.ts`. That branch has no unit test for the rule. A fact-only batch on the shared agent does not notify. A chat batch on that agent does. If the gateway notifies an assistant-only batch, it extracts stored facts again.
+Facts use the role from `factRecordRole`. That role keeps the batch free of a user message. The extraction rule lives in `memory-core-contract.ts`. See MemoryCore coupling.
 
 The reviewed catalog has no atomic create route. `POST /v3/atomic/update` returns 404 when the id is new.
 
 `resolveMemoryScope` chooses the team, the user, the agent, and the session for each read and write. The local account id comes from settings, or it is created once and stored. An empty identity map does not merge platform accounts. `confirmIdentityLink` stores a link only when the caller passes confirmation. Old rows under a fixed team id are left in place.
+
+Recall keeps recent turns for that same scope until a remote hit has the same text. The list is ranked by relevance, then time. It stops at a count and a character budget.
+
+A failed `conversation/add` stays in a device queue. Retry waits grow from 1 second to 30 seconds. A turn id that the gateway accepted is not sent again. `conversation/add` does not accept a caller message id. `id` and `version` are read-only. Before a retry, the client queries that team, user, agent, and session. When the same role and content are already stored, the retry does not write again.
+
+L0 delete goes through `deleteExactMessages`. One message id deletes one L0 row. A session id deletes every L0 row in that session. The gateway adds the two counts when a body sends both. The adapter sends message ids only. When the count is not the id count, it warns and throws. L1 delete is `atomic/delete`. L2 delete is `scenario/rm`. L3 has read, write, and count, and no delete. The graph does not invent a persona delete. The line "forget this" removes the latest turn in that session.
+
+## MemoryCore coupling
+
+`packages/tencentdb-memory/src/memory-core-contract.ts` is the only place that encodes a gateway rule. The store and the graph call package types. They do not read gateway field names.
+
+| Assumption | Guard |
+| --- | --- |
+| L1 extraction starts only when the batch has a user message. Facts use the assistant role. | `memory-core-contract.test.ts`. The live case skips unless `LIVE_MEMORY_CORE=1`. A fact-only batch that creates an atom fails that case. |
+| One message id deletes one L0 row. A session id deletes the whole session. The two counts are added when both lists are sent. | `deleteExactMessages` warns and throws when the count is not the id count. `memory-core-contract.test.ts` covers the mismatch. The live case deletes one id and checks that the other row remains. |
+| `conversation/add` does not accept a caller message id. A retry reads the scope and skips a stored batch. | `write-retry.test.ts` |
+| L3 has no delete route. | `layer-delete.test.ts` |
+
+The source for the first two rows is `feat/server_team` `handleConversationAdd` and `handleConversationDelete`. That branch has no unit test for those handlers.
 
 ## Unresolved
 

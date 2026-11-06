@@ -54,6 +54,12 @@ function gateway(): MemoryV3Client {
     async readCore() {
       return { content: null }
     },
+    async deleteAtomic() {
+      return { deletedCount: 0 }
+    },
+    async removeScenario() {
+      return undefined
+    },
   }
 }
 

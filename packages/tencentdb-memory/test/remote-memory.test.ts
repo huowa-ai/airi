@@ -2,7 +2,8 @@ import type { MemoryV3Client } from '../src/memory-client'
 
 import { describe, expect, it } from 'vitest'
 
-import { appendConversation, batchNotifiesExtraction } from '../src/conversation-write'
+import { appendConversation } from '../src/conversation-write'
+import { batchStartsExtraction } from '../src/memory-core-contract'
 import { createRemoteMemoryStorage, factSessionId } from '../src/remote-memory'
 
 interface Row {
@@ -34,8 +35,7 @@ function gateway(): MemoryV3Client & { rows: Row[], extractions: Array<{ agentId
         })
         return id
       })
-      // Same rule as MemoryCore handleConversationAdd: notify only when a user message is present.
-      if (batchNotifiesExtraction(input.messages))
+      if (batchStartsExtraction(input.messages))
         extractions.push({ agentId: input.agentId ?? '', sessionId: input.sessionId })
       return { acceptedIds, acceptedVersions: acceptedIds.map(() => 'v1'), totalCount: acceptedIds.length }
     },
@@ -80,6 +80,12 @@ function gateway(): MemoryV3Client & { rows: Row[], extractions: Array<{ agentId
     async readCore() {
       return { content: null }
     },
+    async deleteAtomic() {
+      return { deletedCount: 0 }
+    },
+    async removeScenario() {
+      return undefined
+    },
   }
 }
 
@@ -107,7 +113,7 @@ describe('remote memory storage', () => {
     const factRows = client.rows.filter(row => row.sessionId === factSessionId)
     expect(factRows.map(row => row.agentId)).toEqual(['card-1'])
     expect(factRows.every(row => row.role === 'assistant')).toBe(true)
-    expect(batchNotifiesExtraction(factRows)).toBe(false)
+    expect(batchStartsExtraction(factRows)).toBe(false)
     expect(client.extractions).toEqual([])
     const otherCard = await client.queryConversation({ agentId: 'card-2', sessionId: factSessionId })
     expect(otherCard.messages).toEqual([])

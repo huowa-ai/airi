@@ -308,8 +308,10 @@ export const useChatStore = defineStore('chat', () => {
 
   function sessionSystemPrompt(sessionId: string) {
     const persona = personaOf(sessionId)
+    const recall = memory.enabled ? memory.recallBlock(sessionId) : ''
     const identity = composeSystemPrompt(cardStore.getSystemPrompt(persona))
       + (memory.enabled ? composeMemoryPrompt(memory.indexFor(persona, memoryRequest(sessionId))) : '')
+      + (recall ? `\n\n${recall}` : '')
       + (drawsCards(sessionId) ? composeDrawCardPrompt() : '')
     const recipeId = chatSession.sessionMetas[sessionId]?.recipeId
     const recipe = recipeId ? recipes.recipes.find(entry => entry.id === recipeId) : undefined
@@ -1166,6 +1168,21 @@ export const useChatStore = defineStore('chat', () => {
       if (artistry?.autonomousEnabled && artistry?.autonomousTarget === 'assistant')
         void artistryAutonomousStore.runArtistTask(messageText, toProviderHistory(sessionMessages))
     },
+  })
+
+  runtime.hooks.onBeforeMessageComposed(async (message, context) => {
+    try {
+      const binding = chatSession.sessionMetas[context.sessionId]?.bindings?.[0]
+      await memory.prepareRecall({
+        sessionId: context.sessionId,
+        personaId: personaOf(context.sessionId),
+        query: message,
+        ...(binding ? { binding } : {}),
+      })
+    }
+    catch (error) {
+      console.warn('[memory] Recall was not ready.', errorMessageFrom(error) ?? '')
+    }
   })
 
   // A finished turn is L0 on MemoryCore. The queue does not block the turn.
