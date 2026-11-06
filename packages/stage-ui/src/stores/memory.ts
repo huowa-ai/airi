@@ -5,7 +5,7 @@ import type { ChatTurnRecord } from './chat-turn-memory'
 
 import { errorMessageFrom } from '@moeru/std'
 import { useLocalStorageManualReset } from '@proj-airi/stage-shared/composables'
-import { agentIdForEntry, bindMemoryScope, confirmIdentityLink, conversationContentHash, createChatTurnQueue, createMemoryClient, createRecallBuffer, createRemoteMemoryStorage, createWriteOutbox, defaultRecallBudget, deleteLayerRecord, deliverConversation, formatRecall, GENERAL_AGENT_ID, isForgetPhrase, localScopeSessionId, memoryClientEnv, mergeRecall, parseSceneBinding, readIdentityMap, readMemoryClientConfig, readMemoryLayers, resolveLocalAccountId, resolveMemoryScope, sanitizeScopeId } from '@proj-airi/tencentdb-memory'
+import { agentIdForEntry, bindMemoryScope, confirmIdentityLink, conversationContentHash, createChatTurnQueue, createMemoryClient, createRecallBuffer, createRemoteMemoryStorage, createWriteOutbox, defaultRecallBudget, deleteExactMessages, deleteLayerRecord, deliverConversation, formatRecall, GENERAL_AGENT_ID, isForgetPhrase, localScopeSessionId, memoryClientEnv, mergeRecall, parseSceneBinding, readIdentityMap, readMemoryClientConfig, readMemoryLayers, resolveLocalAccountId, resolveMemoryScope, sanitizeScopeId } from '@proj-airi/tencentdb-memory'
 import { useBroadcastChannel } from '@vueuse/core'
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
@@ -473,7 +473,7 @@ export const useMemoryStore = defineStore('memory', () => {
     recallBlocks.delete(scope.sessionId)
     const client = memoryClient
     if (client && newest.messageIds.length > 0) {
-      await bindMemoryScope(client, scope).deleteConversation({
+      await deleteExactMessages(bindMemoryScope(client, scope), {
         agentId: scope.agentId,
         messageIds: newest.messageIds,
       }).catch((error: unknown) => {

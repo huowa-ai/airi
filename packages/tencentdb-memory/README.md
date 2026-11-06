@@ -52,7 +52,7 @@ A gateway that allows only `Content-Type` and `Authorization` blocks the page. T
 
 A successful chat turn and a manual fact both call `appendConversation`. The agent id is the character card, or `airi:general`. The chat session id is the chat session. Empty text, a pure slash command, pure emoji, and an image with no caption are not stored. A copied system prompt and the memory index are removed before the write. The write runs in the background. A failure does not stop the chat.
 
-Manual facts stay L0 JSON in session `airi:facts`. The role is `assistant`. MemoryCore notifies L1 extraction only when the batch has a user message. The source is `feat/server_team` `MemoryCore/src/gateway/v2-router.ts`. That branch has no unit test for the rule. A fact-only batch on the shared agent does not notify. A chat batch on that agent does. If the gateway notifies an assistant-only batch, it extracts stored facts again.
+Manual facts stay L0 JSON in session `airi:facts`. The role comes from `factRecordRole` in `memory-core-contract.ts`. That module is the only place that encodes the gateway extraction rule. A fact batch has no user message, so it does not start L1 extraction. A chat batch does.
 
 The v3 catalog has `atomic/update`, `atomic/query`, `atomic/search`, and `atomic/delete`. It has no atomic create route. `atomic/update` returns 404 for an unknown id. The graph lists these facts with `listFacts`, and it reads L1, L2, and L3 for the same agent ids.
 
@@ -64,7 +64,7 @@ Recall keeps a few recent turns for that scope until search returns the same tex
 
 A failed conversation write stays in a local queue. The queue retries with a longer wait, up to 30 seconds. A turn id that already succeeded is not sent again. `conversation/add` does not take a caller message id. Before a retry, the client reads that scope. When the same role and content are already there, the retry skips the write.
 
-`conversation/delete` with `message_ids` deletes those rows only. `session_id` is copied into `session_ids` and deletes the whole session. The gateway adds both counts. This client sends one of those lists, not both. When `deleted_count` is not the message id count, the client warns and throws. `atomic/delete` and `scenario/rm` delete L1 and L2. The persona has no delete route. The phrase "forget this" removes the latest turn in that session.
+`deleteExactMessages` deletes L0 rows by message id. It does not send a session id. A session id deletes every row in that session. When the returned count is not the id count, the call warns and throws. `atomic/delete` and `scenario/rm` delete L1 and L2. The persona has no delete route. The phrase "forget this" removes the latest turn in that session.
 
 ## Scope of L2 and L3
 

@@ -90,18 +90,3 @@ async function storedMessageIds(client: MemoryV3Client, input: AddConversationIn
   }
   return ids
 }
-
-/**
- * Whether this batch starts L1 extraction.
- * MemoryCore counts messages with role `user`. A batch with none does not notify.
- *
- * Source: `feat/server_team` `MemoryCore/src/gateway/v2-router.ts` `handleConversationAdd`.
- * That branch has no unit test for this rule.
- *
- * @example
- * batchNotifiesExtraction([{ role: 'assistant' }])
- * // => false
- */
-export function batchNotifiesExtraction(messages: readonly { role: string }[]) {
-  return messages.filter(message => message.role === 'user').length > 0
-}

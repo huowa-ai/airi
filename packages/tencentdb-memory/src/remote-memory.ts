@@ -5,6 +5,7 @@ import { v7 as uuidv7 } from 'uuid'
 import { array, boolean, literal, number, object, optional, safeParse, string } from 'valibot'
 
 import { appendConversation } from './conversation-write'
+import { deleteExactMessages, factRecordRole } from './memory-core-contract'
 import { agentIdForEntry, GENERAL_AGENT_ID } from './memory-storage'
 
 /** L0 session that holds fact records. It is not a chat transcript. */
@@ -263,9 +264,7 @@ async function addFact(client: MemoryV3Client, persona: string | undefined, entr
 }
 
 async function deleteMessages(client: MemoryV3Client, agentId: string, messageIds: string[]) {
-  if (messageIds.length === 0)
-    return
-  await client.deleteConversation({ agentId, messageIds })
+  await deleteExactMessages(client, { agentId, messageIds })
 }
 
 /**
@@ -293,8 +292,7 @@ async function readDirectory(client: MemoryV3Client): Promise<DirectoryState> {
 }
 
 async function saveDirectory(client: MemoryV3Client, state: DirectoryState) {
-  if (state.messageIds.length > 0)
-    await client.deleteConversation({ agentId: directoryAgentId, messageIds: state.messageIds })
+  await deleteExactMessages(client, { agentId: directoryAgentId, messageIds: state.messageIds })
   await appendConversation(client, {
     agentId: directoryAgentId,
     sessionId: directorySessionId,
@@ -308,15 +306,10 @@ async function saveDirectory(client: MemoryV3Client, state: DirectoryState) {
 
 /**
  * A fact or directory record, not a chat turn.
- *
- * NOTICE:
- * The role is `assistant` so MemoryCore does not start L1 extraction.
- * `handleConversationAdd` notifies the pipeline only when the batch contains a user message.
- * Source: TencentCloud/TencentDB-Agent-Memory `feat/server_team` `MemoryCore/src/gateway/v2-router.ts`.
- * Remove this role when that gateway notifies a batch that has no user message.
+ * The role comes from {@link factRecordRole}. That is the extraction rule for this gateway.
  */
 function storedRecord(content: string) {
-  return { role: 'assistant' as const, content }
+  return { role: factRecordRole(), content }
 }
 
 async function queryAll(client: MemoryV3Client, agentId: string, sessionId: string) {

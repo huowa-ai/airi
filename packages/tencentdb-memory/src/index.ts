@@ -9,7 +9,7 @@ export {
   readMemoryClientConfig,
 } from './client-config'
 export type { MemoryClientConfig, MemoryClientConfigResult } from './client-config'
-export { appendConversation, batchNotifiesExtraction, conversationContentHash, deliverConversation } from './conversation-write'
+export { appendConversation, conversationContentHash, deliverConversation } from './conversation-write'
 export type { DeliverConversationResult } from './conversation-write'
 export type { MemoryFactProjection, MemoryNotice } from './fact-projection'
 export { deleteLayerRecord, forgetPhrases, isForgetPhrase } from './layer-delete'
@@ -55,6 +55,14 @@ export type {
   SearchConversationInput,
   SearchConversationResult,
 } from './memory-client'
+export {
+  batchNotifiesExtraction,
+  batchStartsExtraction,
+  deleteExactMessages,
+  factRecordRole,
+  memoryCoreCapabilities,
+} from './memory-core-contract'
+export type { MemoryCoreCapabilities } from './memory-core-contract'
 export {
   confirmIdentityLink,
   EMPTY_IDENTITY_MAP,

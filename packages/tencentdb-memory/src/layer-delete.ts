@@ -1,5 +1,7 @@
 import type { MemoryV3Client } from './memory-client'
 
+import { deleteExactMessages } from './memory-core-contract'
+
 /**
  * Phrases that delete the latest recalled turn.
  * The match is the whole line, after trimming and lower case.
@@ -30,7 +32,7 @@ export async function deleteLayerRecord(client: MemoryV3Client, input: {
   if (input.layer === 'L3')
     return { deleted: false, layer: 'L3', reason: 'no-delete-api' }
   if (input.layer === 'L0') {
-    await client.deleteConversation({ agentId: input.agentId, messageIds: input.messageIds ?? [] })
+    await deleteExactMessages(client, { agentId: input.agentId, messageIds: input.messageIds ?? [] })
     return { deleted: true, layer: 'L0' }
   }
   if (input.layer === 'L1') {

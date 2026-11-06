@@ -393,19 +393,14 @@ export function createMemoryClient(config: MemoryClientConfig, options: MemoryV3
       if (messageIds.length === 0 && sessionIds.length === 0)
         rejectInput(deletePath, 'Delete needs message ids or session ids.')
 
-      // A message delete sends message_ids only.
-      // session_id is merged into session_ids and deletes every L0 row in that session.
+      // Transport only. deleteExactMessages checks the count.
+      // A message delete sends message_ids only. session_id deletes the whole session.
       const result = await post(fetchImpl, config, secrets, timeoutMs, deletePath, {
         team_id: input.teamId ?? config.teamId,
         agent_id: agentId,
         user_id: input.userId ?? config.userId,
         ...(messageIds.length === 0 ? { session_ids: sessionIds } : { message_ids: messageIds }),
       }, deleteDataSchema, data => data)
-      if (messageIds.length > 0 && result.deleted_count !== messageIds.length) {
-        const message = `Delete removed ${result.deleted_count} records. Expected ${messageIds.length}.`
-        console.warn(`[memory] ${message}`)
-        throw new MemoryClientError({ path: deletePath, status: 200, code: 0, message })
-      }
       return { deletedCount: result.deleted_count }
     },
 
