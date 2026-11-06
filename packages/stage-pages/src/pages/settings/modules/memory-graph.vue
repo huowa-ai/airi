@@ -6,7 +6,7 @@ import { useAiriCardStore } from '@proj-airi/stage-ui/stores/modules/airi-card'
 import { Alert } from '@proj-airi/ui'
 import { usePreferredReducedMotion } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import MemoryGraphView from './components/memory-graph-view.vue'
@@ -20,6 +20,12 @@ const { cards } = storeToRefs(useAiriCardStore())
 const reducedMotion = usePreferredReducedMotion()
 const selectedId = ref('')
 const graphUnavailable = ref(false)
+const confirmDelete = ref(false)
+const deleteNote = ref('')
+watch(selectedId, () => {
+  confirmDelete.value = false
+  deleteNote.value = ''
+})
 
 const KEY = 'settings.pages.modules.memory-long-term.graph'
 const UNKNOWN = 'settings.pages.modules.memory-long-term.unknown-character'
@@ -81,6 +87,32 @@ function sourceOf(entry: MemoryGraphFact | undefined) {
   if (!entry || !('provenance' in entry))
     return undefined
   return entry.provenance
+}
+
+function askDelete() {
+  deleteNote.value = ''
+  confirmDelete.value = true
+}
+
+async function runDelete() {
+  if (!selected.value)
+    return
+  const result = await memory.deleteRecord({
+    kind: selected.value.kind,
+    id: selected.value.id,
+    recordId: selected.value.recordId,
+    path: selected.value.path,
+    persona: selected.value.persona,
+  })
+  confirmDelete.value = false
+  if (!result.deleted) {
+    deleteNote.value = 'reason' in result && result.reason === 'no-delete-api'
+      ? t(`${KEY}.delete-l3`)
+      : t(`${KEY}.delete-failed`)
+    return
+  }
+  selectedId.value = ''
+  deleteNote.value = ''
 }
 
 function cardName(persona: string | undefined) {
@@ -249,6 +281,33 @@ function typeLabel(type: string | undefined) {
               </dd>
             </template>
           </dl>
+          <p v-if="selected.layer === 'L3'" :class="['text-sm', 'text-neutral-500 dark:text-neutral-400']">
+            {{ t(`${KEY}.delete-l3`) }}
+          </p>
+          <div v-else :class="['flex flex-wrap', 'gap-2']">
+            <button
+              v-if="!confirmDelete"
+              type="button"
+              :class="['rounded-lg', 'bg-red-600', 'px-3 py-2', 'text-sm', 'text-white']"
+              @click="askDelete"
+            >
+              {{ t(`${KEY}.delete`) }}
+            </button>
+            <template v-else>
+              <p :class="['w-full', 'text-sm']">
+                {{ t(`${KEY}.delete-confirm`) }}
+              </p>
+              <button type="button" :class="['rounded-lg', 'bg-red-600', 'px-3 py-2', 'text-sm', 'text-white']" @click="runDelete">
+                {{ t(`${KEY}.delete-yes`) }}
+              </button>
+              <button type="button" :class="['rounded-lg', 'bg-neutral-200 dark:bg-neutral-700', 'px-3 py-2', 'text-sm']" @click="confirmDelete = false">
+                {{ t(`${KEY}.delete-no`) }}
+              </button>
+            </template>
+          </div>
+          <p v-if="deleteNote" :class="['text-sm', 'text-red-600 dark:text-red-400']">
+            {{ deleteNote }}
+          </p>
         </div>
 
         <h2 :class="['text-sm font-medium']">

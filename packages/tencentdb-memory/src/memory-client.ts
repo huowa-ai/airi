@@ -19,9 +19,11 @@ const addPath = '/v3/conversation/add'
 const searchPath = '/v3/conversation/search'
 const queryPath = '/v3/conversation/query'
 const deletePath = '/v3/conversation/delete'
+const atomicDeletePath = '/v3/atomic/delete'
 const atomicQueryPath = '/v3/atomic/query'
 const scenarioListPath = '/v3/scenario/ls'
 const scenarioReadPath = '/v3/scenario/read'
+const scenarioRemovePath = '/v3/scenario/rm'
 const coreReadPath = '/v3/core/read'
 
 export interface ConversationMessageInput {
@@ -93,6 +95,20 @@ export interface DeleteConversationInput extends MemoryCallScope {
 
 export interface DeleteConversationResult {
   deletedCount: number
+}
+
+export interface DeleteAtomicInput extends MemoryCallScope {
+  ids: string[]
+  agentId?: string
+}
+
+export interface DeleteAtomicResult {
+  deletedCount: number
+}
+
+export interface RemoveScenarioInput extends MemoryCallScope {
+  path: string
+  agentId?: string
 }
 
 export interface AtomicRecord {
@@ -176,7 +192,9 @@ export interface MemoryV3Client {
   searchConversation: (input: SearchConversationInput) => Promise<SearchConversationResult>
   queryConversation: (input: QueryConversationInput) => Promise<QueryConversationResult>
   deleteConversation: (input: DeleteConversationInput) => Promise<DeleteConversationResult>
+  deleteAtomic: (input: DeleteAtomicInput) => Promise<DeleteAtomicResult>
   queryAtomic: (input: QueryAtomicInput) => Promise<QueryAtomicResult>
+  removeScenario: (input: RemoveScenarioInput) => Promise<void>
   listScenarios: (input: ListScenariosInput) => Promise<ListScenariosResult>
   readScenario: (input: ReadScenarioInput) => Promise<ReadScenarioResult>
   readCore: (input: ReadCoreInput) => Promise<CoreRecord>
@@ -368,17 +386,40 @@ export function createMemoryClient(config: MemoryClientConfig, options: MemoryV3
     async deleteConversation(input) {
       const agentId = input.agentId ?? config.agentId
       assertAgentId(deletePath, agentId)
-      const messageIds = input.messageIds ?? []
-      const sessionIds = input.sessionIds ?? []
+      const messageIds = uniqueIds(input.messageIds ?? [])
+      const sessionIds = uniqueIds(input.sessionIds ?? [])
+      if (messageIds.length > 0 && sessionIds.length > 0)
+        rejectInput(deletePath, 'Delete message ids or session ids, not both.')
       if (messageIds.length === 0 && sessionIds.length === 0)
         rejectInput(deletePath, 'Delete needs message ids or session ids.')
 
-      return post(fetchImpl, config, secrets, timeoutMs, deletePath, {
+      // A message delete sends message_ids only.
+      // session_id is merged into session_ids and deletes every L0 row in that session.
+      const result = await post(fetchImpl, config, secrets, timeoutMs, deletePath, {
         team_id: input.teamId ?? config.teamId,
         agent_id: agentId,
         user_id: input.userId ?? config.userId,
-        ...(messageIds.length === 0 ? {} : { message_ids: messageIds }),
-        ...(sessionIds.length === 0 ? {} : { session_ids: sessionIds }),
+        ...(messageIds.length === 0 ? { session_ids: sessionIds } : { message_ids: messageIds }),
+      }, deleteDataSchema, data => data)
+      if (messageIds.length > 0 && result.deleted_count !== messageIds.length) {
+        const message = `Delete removed ${result.deleted_count} records. Expected ${messageIds.length}.`
+        console.warn(`[memory] ${message}`)
+        throw new MemoryClientError({ path: deletePath, status: 200, code: 0, message })
+      }
+      return { deletedCount: result.deleted_count }
+    },
+
+    async deleteAtomic(input) {
+      const agentId = input.agentId ?? config.agentId
+      assertAgentId(atomicDeletePath, agentId)
+      if (input.ids.length === 0)
+        rejectInput(atomicDeletePath, 'Delete needs atom ids.')
+
+      return post(fetchImpl, config, secrets, timeoutMs, atomicDeletePath, {
+        team_id: input.teamId ?? config.teamId,
+        agent_id: agentId,
+        user_id: input.userId ?? config.userId,
+        ids: input.ids,
       }, deleteDataSchema, data => ({
         deletedCount: data.deleted_count,
       }))
@@ -417,6 +458,19 @@ export function createMemoryClient(config: MemoryClientConfig, options: MemoryV3
         entries: data.entries.map(mapScenario),
         total: data.total,
       }))
+    },
+
+    async removeScenario(input) {
+      const agentId = input.agentId ?? config.agentId
+      assertAgentId(scenarioRemovePath, agentId)
+      assertRelativePath(scenarioRemovePath, input.path)
+
+      await post(fetchImpl, config, secrets, timeoutMs, scenarioRemovePath, {
+        team_id: input.teamId ?? config.teamId,
+        agent_id: agentId,
+        user_id: input.userId ?? config.userId,
+        path: input.path,
+      }, optional(nullable(unknown())), () => undefined)
     },
 
     async readScenario(input) {
@@ -469,7 +523,9 @@ export function bindMemoryScope(client: MemoryV3Client, scope: { teamId: string,
     searchConversation: input => client.searchConversation({ ...input, ...bound }),
     queryConversation: input => client.queryConversation({ ...input, ...bound }),
     deleteConversation: input => client.deleteConversation({ ...input, ...bound }),
+    deleteAtomic: input => client.deleteAtomic({ ...input, ...bound }),
     queryAtomic: input => client.queryAtomic({ ...input, ...bound }),
+    removeScenario: input => client.removeScenario({ ...input, ...bound }),
     listScenarios: input => client.listScenarios({ ...input, ...bound }),
     readScenario: input => client.readScenario({ ...input, ...bound }),
     readCore: input => client.readCore({ ...input, ...bound }),
@@ -603,6 +659,19 @@ function redact(text: string, secrets: string[]) {
     if (secret.length < 4)
       continue
     output = output.split(secret).join('[redacted]')
+  }
+  return output
+}
+
+function uniqueIds(ids: string[]) {
+  const seen = new Set<string>()
+  const output: string[] = []
+  for (const raw of ids) {
+    const id = raw.trim()
+    if (!id || seen.has(id))
+      continue
+    seen.add(id)
+    output.push(id)
   }
   return output
 }

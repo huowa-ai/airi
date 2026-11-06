@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net'
 import { Buffer } from 'node:buffer'
 import { createServer } from 'node:http'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createMemoryClient, MemoryClientError } from '../src/memory-client'
 
@@ -286,6 +286,37 @@ describe('memory v3 client', () => {
     expect(gateway.captured[0]?.body).toMatchObject({ team_id: 'team-1', user_id: 'user-1', agent_id: 'card-1', limit: 20 })
     expect(gateway.captured[0]?.authorization).toBe('Bearer local')
     expect(gateway.captured[0]?.requestId).toBeUndefined()
+  })
+
+  it('deletes one message id and refuses a count that is not that id', async () => {
+    const gateway = await fakeGateway((request) => {
+      const body = request.body as { message_ids?: string[], session_ids?: string[] }
+      if (body.session_ids)
+        return { body: { code: 0, message: 'ok', data: { deleted_count: 4 } } }
+      return { body: { code: 0, message: 'ok', data: { deleted_count: body.message_ids?.length === 1 ? 4 : 1 } } }
+    })
+    const memory = client(gateway.endpoint)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await expect(memory.deleteConversation({ messageIds: ['msg-1'] })).rejects.toThrow('Delete removed 4 records. Expected 1.')
+    await expect(memory.deleteConversation({ messageIds: ['msg-1'], sessionIds: ['session-1'] })).rejects.toThrow('Delete message ids or session ids, not both.')
+    await expect(memory.deleteConversation({ sessionIds: ['session-1'] })).resolves.toEqual({ deletedCount: 4 })
+
+    expect(gateway.captured[0]?.body).toEqual({
+      team_id: 'team-1',
+      agent_id: 'card-1',
+      user_id: 'user-1',
+      message_ids: ['msg-1'],
+    })
+    expect(gateway.captured[1]?.body).toEqual({
+      team_id: 'team-1',
+      agent_id: 'card-1',
+      user_id: 'user-1',
+      session_ids: ['session-1'],
+    })
+    expect(gateway.captured[0]?.body).not.toHaveProperty('session_id')
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
   })
 
   it('treats a missing persona file as empty content', async () => {

@@ -77,6 +77,8 @@ export interface MemoryGraphDetail {
   background?: string
   type?: string
   path?: string
+  /** Service id for an atom. `id` on an atom detail is the layout id. */
+  recordId?: string
   summary?: string
   updatedAt?: number
   sections: readonly MemoryGraphSection[]
@@ -208,6 +210,7 @@ export function buildMemoryGraph(input: {
       body: atom.content,
       background: atom.background,
       type: atom.type,
+      recordId: atom.id,
       updatedAt: atom.updatedAt,
     })),
     ...scenes.map(scene => detail({
@@ -406,6 +409,7 @@ function detail(input: {
   background?: string
   type?: string
   path?: string
+  recordId?: string
   summary?: string
   updatedAt?: number
   sections?: readonly MemoryGraphSection[]
@@ -421,6 +425,7 @@ function detail(input: {
     ...(input.background ? { background: input.background } : {}),
     ...(input.type ? { type: input.type } : {}),
     ...(input.path ? { path: input.path } : {}),
+    ...(input.recordId ? { recordId: input.recordId } : {}),
     ...(input.summary ? { summary: input.summary } : {}),
     ...(input.updatedAt === undefined ? {} : { updatedAt: input.updatedAt }),
     sections: input.sections ?? [],

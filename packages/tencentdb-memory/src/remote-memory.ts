@@ -72,6 +72,8 @@ export function createRemoteMemoryStorage(client: MemoryV3Client): MemoryStorage
     remove: (ids, updatedAt) => run(() => removeFacts(client, ids, updatedAt)),
 
     clear: updatedAt => run(() => clearFacts(client, updatedAt)),
+
+    destroy: id => run(() => destroyFact(client, id)),
   }
 }
 
@@ -168,6 +170,16 @@ async function removeFacts(client: MemoryV3Client, ids: string[], updatedAt: num
     await deleteMessages(client, current.agentId, current.messageIds)
     await addFact(client, current.entry.persona, { ...current.entry, updatedAt }, true)
   }
+}
+
+async function destroyFact(client: MemoryV3Client, id: string) {
+  const facts = await loadFacts(client, await readDirectory(client))
+  const matches = facts.filter(fact => fact.entry.id === id)
+  if (matches.length === 0)
+    return false
+  for (const fact of matches)
+    await deleteMessages(client, fact.agentId, fact.messageIds)
+  return true
 }
 
 async function clearFacts(client: MemoryV3Client, updatedAt: number) {

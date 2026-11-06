@@ -94,6 +94,8 @@ export interface MemoryStorage {
   remove: (ids: string[], updatedAt: number) => Promise<void>
   /** Drops every record in the scope. A later write at or before `updatedAt` does not return. */
   clear: (updatedAt: number) => Promise<void>
+  /** Deletes one fact by id. The row does not stay as a tombstone. */
+  destroy: (id: string) => Promise<boolean>
 }
 
 interface MemoryTombstone {
@@ -286,6 +288,13 @@ class FakeMemoryStorage implements MemoryStorage {
 
         bucket.records.set(id, { id, updatedAt, deleted: true })
       }
+    })
+  }
+
+  destroy(id: string) {
+    return this.records.run(() => {
+      const bucket = this.records.bucket(this.teamId, this.userId)
+      return bucket.records.delete(id)
     })
   }
 

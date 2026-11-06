@@ -107,6 +107,26 @@ describe('memory graph page', () => {
     expect(screen.container.querySelector('canvas')).toBeNull()
   })
 
+  it('asks before it deletes the selected fact', async () => {
+    const gateway = createMemoryCoreFetch()
+    vi.stubGlobal('fetch', gateway.fetch)
+    enableMemoryService()
+    preferReducedMotion(true)
+    const { screen, memory } = await renderPage()
+    await memory.write({ description: 'Drink', body: 'Ada likes tea.' }, 'airi')
+
+    await screen.getByRole('button', { name: /Drink/ }).click()
+    await screen.getByRole('button', { name: 'Delete' }).click()
+    await expect.element(screen.getByText('Delete this record from the memory service?')).toBeVisible()
+    await screen.getByRole('button', { name: 'Cancel' }).click()
+    await expect.element(screen.getByRole('button', { name: /Drink/ })).toBeVisible()
+
+    await screen.getByRole('button', { name: 'Delete' }).click()
+    await expect.element(screen.getByText('Delete this record from the memory service?')).toBeVisible()
+    await screen.getByRole('button', { name: 'Delete' }).click()
+    await expect.element(screen.getByRole('button', { name: /Drink/ })).not.toBeInTheDocument()
+  })
+
   it('shows fixture L1 atoms, one L2 scene, and one L3 persona', async () => {
     const gateway = createMemoryCoreFetch()
     const team = localServiceTeamId()

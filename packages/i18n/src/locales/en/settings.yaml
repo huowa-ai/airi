@@ -1178,6 +1178,12 @@ pages:
         updated: Updated
         source: Source
         no-source: No source is stored for this fact.
+        delete: Delete
+        delete-confirm: Delete this record from the memory service?
+        delete-yes: Delete
+        delete-no: Cancel
+        delete-l3: The persona has no delete in the memory service. This page does not remove it.
+        delete-failed: The memory service did not delete the record.
         session: 'Session {id}'
         turn: 'Turn {id}'
         binding: 'Scene {id}'

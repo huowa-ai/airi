@@ -60,6 +60,12 @@ The v3 catalog has `atomic/update`, `atomic/query`, `atomic/search`, and `atomic
 
 An identity map can point several platform identities at one private team. The map starts empty. A link is stored only after confirmation. The resolver does not merge accounts by itself. Cross-group sharing stays off. The request type has a hook for a later opt-in, and the resolver does not call it.
 
+Recall keeps a few recent turns for that scope until search returns the same text. The merged list is ranked by relevance, then time. It stops at 5 hits and 800 characters.
+
+A failed conversation write stays in a local queue. The queue retries with a longer wait, up to 30 seconds. A turn id that already succeeded is not sent again. `conversation/add` does not take a caller message id. Before a retry, the client reads that scope. When the same role and content are already there, the retry skips the write.
+
+`conversation/delete` with `message_ids` deletes those rows only. `session_id` is copied into `session_ids` and deletes the whole session. The gateway adds both counts. This client sends one of those lists, not both. When `deleted_count` is not the message id count, the client warns and throws. `atomic/delete` and `scenario/rm` delete L1 and L2. The persona has no delete route. The phrase "forget this" removes the latest turn in that session.
+
 ## Scope of L2 and L3
 
 L0 facts and L1 atoms follow the team, the user, and the character. L2 scenes and the L3 persona follow the team and the character only. The gateway scope is `team:<team id>|agent:<agent id>`. A private account and a group use different team ids, so those layers do not cross. Members of one group share that group's scenes and persona. The graph shows the current team. The L2 and L3 detail names that team.

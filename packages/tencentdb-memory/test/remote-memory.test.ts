@@ -80,6 +80,12 @@ function gateway(): MemoryV3Client & { rows: Row[], extractions: Array<{ agentId
     async readCore() {
       return { content: null }
     },
+    async deleteAtomic() {
+      return { deletedCount: 0 }
+    },
+    async removeScenario() {
+      return undefined
+    },
   }
 }
 

@@ -92,6 +92,14 @@ describe('channel module', () => {
         calls.push('core')
         throw new Error('unexpected core')
       },
+      async deleteAtomic() {
+        calls.push('atomic-delete')
+        throw new Error('unexpected atomic delete')
+      },
+      async removeScenario() {
+        calls.push('scenario-rm')
+        throw new Error('unexpected scenario remove')
+      },
     }
 
     const started = await startMemoryModule({

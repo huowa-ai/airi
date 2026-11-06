@@ -214,6 +214,12 @@ The reviewed catalog has no atomic create route. `POST /v3/atomic/update` return
 
 `resolveMemoryScope` chooses the team, the user, the agent, and the session for each read and write. The local account id comes from settings, or it is created once and stored. An empty identity map does not merge platform accounts. `confirmIdentityLink` stores a link only when the caller passes confirmation. Old rows under a fixed team id are left in place.
 
+Recall keeps recent turns for that same scope until a remote hit has the same text. The list is ranked by relevance, then time. It stops at a count and a character budget.
+
+A failed `conversation/add` stays in a device queue. Retry waits grow from 1 second to 30 seconds. A turn id that the gateway accepted is not sent again. `conversation/add` does not accept a caller message id. `id` and `version` are read-only. Before a retry, the client queries that team, user, agent, and session. When the same role and content are already stored, the retry does not write again.
+
+L0 delete is `conversation/delete`. One entry in `message_ids` deletes one L0 row in that team, user, and agent. It does not delete the other messages of the turn. The singular `session_id` is merged into `session_ids`. That path deletes every L0 row in the session. The gateway adds the two counts. A body that sends both can report more deletes than the one id. The source is `feat/server_team` `MemoryCore/src/gateway/v2-router.ts` `handleConversationDelete` and `v2-schemas.ts`. A message-id delete sends only `message_ids`. When `deleted_count` is not the id count, the client warns and refuses the result. L1 delete is `atomic/delete`. L2 delete is `scenario/rm`. L3 has read, write, and count, and no delete. The graph does not invent a persona delete. The line "forget this" removes the latest turn in that session.
+
 ## Unresolved
 
 - Does `atomic/update` insert an unknown id, or only update an existing atom?
