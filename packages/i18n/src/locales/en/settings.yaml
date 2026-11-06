@@ -1178,6 +1178,16 @@ pages:
         updated: Updated
         source: Source
         no-source: No source is stored for this fact.
+        filter-source: Turn source
+        filter-source-all: All turns
+        filter-call: Call id
+        filter-call-placeholder: Filter by one call id
+        turn-source: Turn source
+        call: Call
+        sources:
+          voice: Voice
+          video: Video
+          text: Text
         delete: Delete
         delete-confirm: Delete this record from the memory service?
         delete-yes: Delete

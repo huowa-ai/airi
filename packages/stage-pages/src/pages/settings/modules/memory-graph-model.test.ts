@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { memoryGraphFixture } from './memory-graph-fixture'
-import { buildMemoryGraph, personaSections, readMemoryGraphSource, whalePoint } from './memory-graph-model'
+import { buildMemoryGraph, filterMemoryGraph, personaSections, readMemoryGraphSource, whalePoint } from './memory-graph-model'
 
 const tea = {
   id: 'tea',
@@ -98,6 +98,53 @@ describe('memory graph model', () => {
     const detail = graph.details.find(item => item.layer === 'L3')
     expect(detail?.sections.map(section => section.heading)).toEqual(['Calm companion', 'Drinks', '名字', 'Notes'])
     expect(detail?.scope).toBe('team-agent')
+  })
+
+  it('filters L0 rows by call id and source and keeps higher layers', () => {
+    const callId = '11111111-1111-4111-8111-111111111111'
+    const graph = buildMemoryGraph({
+      serviceRead: 'ready',
+      serviceError: '',
+      facts: [
+        tea,
+        {
+          id: 'turn:typed',
+          description: 'Ada likes tea.',
+          body: 'Ada likes tea.',
+          updatedAt: 3,
+          origin: 'turn',
+          callId,
+          source: 'text',
+        },
+        {
+          id: 'turn:spoken',
+          description: 'Hello.',
+          body: 'Hello.',
+          updatedAt: 4,
+          origin: 'turn',
+          callId,
+          source: 'voice',
+        },
+      ],
+      atoms: [{ id: 'atom-1', type: 'persona', content: 'Ada prefers tea.' }],
+    })
+
+    const bySource = filterMemoryGraph(graph, { source: 'text' })
+    const byCall = filterMemoryGraph(graph, { callId })
+    const both = filterMemoryGraph(graph, { callId, source: 'text' })
+
+    expect(bySource.nodes.filter(node => node.layer === 'L0').map(node => node.id)).toEqual(['turn:typed'])
+    expect(bySource.nodes.some(node => node.layer === 'L1')).toBe(true)
+    expect(bySource.details.find(item => item.id === 'turn:typed')).toMatchObject({
+      body: 'Ada likes tea.',
+      callId,
+      source: 'text',
+      removable: false,
+    })
+    expect(byCall.nodes.filter(node => node.layer === 'L0').map(node => node.id)).toEqual(['turn:typed', 'turn:spoken'])
+    expect(both.nodes.filter(node => node.layer === 'L0').map(node => node.id)).toEqual(['turn:typed'])
+    expect(filterMemoryGraph(graph, {}).nodes.filter(node => node.layer === 'L0')).toHaveLength(3)
+    expect(bySource.links.every(link => bySource.nodes.some(node => node.id === link.source) && bySource.nodes.some(node => node.id === link.target))).toBe(true)
   })
 
   it('splits a persona on headings and keeps a file without headings as one section', () => {

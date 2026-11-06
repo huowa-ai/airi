@@ -1,13 +1,23 @@
 import type { AddConversationInput, AddConversationResult, MemoryV3Client } from './memory-client'
 
+import { prefixCallHeader } from './call-header'
+
 /**
  * Writes one L0 batch.
  * Facts and chat turns both call this. The agent id is the character card, or `airi:general`.
  * A fact batch uses session `airi:facts` and role `assistant`.
  * A chat batch uses the chat session and includes the user message.
+ * `callId` and `source` are written as the content header. The gateway body does not send them.
  */
 export function appendConversation(client: MemoryV3Client, input: AddConversationInput) {
-  return client.addConversation(input)
+  const { callId, source, messages, ...rest } = input
+  return client.addConversation({
+    ...rest,
+    messages: messages.map(message => ({
+      ...message,
+      content: prefixCallHeader(message.content, { callId, source }),
+    })),
+  })
 }
 
 export interface DeliverConversationResult extends AddConversationResult {

@@ -1,5 +1,7 @@
 import type { ChatHistoryItem } from '../../../types/chat'
 
+import { projectCallContent } from '@proj-airi/tencentdb-memory'
+
 function isTextPart(part: unknown): part is { type: 'text', text?: string } {
   return typeof part === 'object'
     && part !== null
@@ -23,7 +25,7 @@ function getTextFromContentParts(parts: unknown[]): string {
 
 export function getChatHistoryItemCopyText(message: ChatHistoryItem): string {
   if (message.role === 'error')
-    return message.content
+    return projectCallContent(message.content)
 
   if (message.role === 'assistant') {
     if (message.slices?.length) {
@@ -35,25 +37,23 @@ export function getChatHistoryItemCopyText(message: ChatHistoryItem): string {
         .join('\n\n')
 
       if (text)
-        return text
+        return projectCallContent(text)
     }
 
     if (typeof message.content === 'string')
-      return message.content
+      return projectCallContent(message.content)
 
-    if (Array.isArray(message.content)) {
-      return getTextFromContentParts(message.content)
-    }
+    if (Array.isArray(message.content))
+      return projectCallContent(getTextFromContentParts(message.content))
 
     return ''
   }
 
   if (typeof message.content === 'string')
-    return message.content
+    return projectCallContent(message.content)
 
-  if (Array.isArray(message.content)) {
-    return getTextFromContentParts(message.content)
-  }
+  if (Array.isArray(message.content))
+    return projectCallContent(getTextFromContentParts(message.content))
 
   return ''
 }
