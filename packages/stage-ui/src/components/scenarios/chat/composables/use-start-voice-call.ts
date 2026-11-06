@@ -1,8 +1,8 @@
 import { useI18n } from 'vue-i18n'
 import { toast } from 'vue-sonner'
 
+import { useCallOrchestratorStore } from '../../../../stores/call-orchestrator'
 import { useSettingsAudioDevice } from '../../../../stores/settings/audio-device'
-import { useVoiceCallStore } from '../../../../stores/voice-call'
 
 /**
  * Starts a voice call from a chat control and explains a failure with a toast.
@@ -14,11 +14,11 @@ export function useStartVoiceCall(
   canStart?: () => boolean,
 ) {
   const { t } = useI18n()
-  const call = useVoiceCallStore()
+  const call = useCallOrchestratorStore()
   const devices = useSettingsAudioDevice()
 
   return async function startVoiceCall() {
-    const failure = await call.start({ canStart })
+    const failure = await call.placeVoiceCall({ canStart })
     if (failure === 'unconfigured') {
       toast(t('stage.chat.voice-composer.configure-title'), {
         description: t('stage.chat.call.configure-description'),

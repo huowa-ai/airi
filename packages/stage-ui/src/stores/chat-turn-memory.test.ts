@@ -2,6 +2,7 @@ import type { ChatHistoryItem, StreamingAssistantMessage } from '@proj-airi/core
 
 import { describe, expect, it } from 'vitest'
 
+import { bindCallTurnReader } from '../composables/call/turn'
 import { captureCompletedChatTurn } from './chat-turn-memory'
 
 function assistant(patch: Partial<StreamingAssistantMessage> = {}): StreamingAssistantMessage {
@@ -93,5 +94,68 @@ describe('completed chat turn capture', () => {
       { userText: '', imageOnly: false, interrupted: false },
       { userText: 'Ada likes tea.', imageOnly: false, interrupted: true },
     ])
+  })
+
+  it('stores the call id and only the played text when the call interrupts the reply', () => {
+    const callId = '11111111-1111-4111-8111-111111111111'
+    const stop = bindCallTurnReader(() => ({
+      callId,
+      source: 'voice',
+      assistantText: 'Let me think.',
+    }))
+    const recorded: Array<{ assistantText: string, callId?: string, source?: string, interrupted?: boolean }> = []
+    try {
+      captureCompletedChatTurn({
+        message: { role: 'user', content: 'Where is the tea?' },
+        output: assistant({ interrupted: true, slices: [{ type: 'text', text: 'Let me think. The full reply was cut.' }] }),
+        outputText: 'Let me think. The full reply was cut.',
+        sessionId: 'session-1',
+        turnId: 'turn-1',
+        personaId: 'card-1',
+        systemPrompt: '',
+        record: (input) => {
+          recorded.push({
+            assistantText: input.assistantText,
+            callId: input.callId,
+            source: input.source,
+            interrupted: input.interrupted,
+          })
+        },
+      })
+    }
+    finally {
+      stop()
+    }
+
+    expect(recorded).toEqual([{
+      assistantText: 'Let me think.',
+      callId,
+      source: 'voice',
+      interrupted: true,
+    }])
+  })
+
+  it('leaves the write to the call when playback is still open', () => {
+    const stop = bindCallTurnReader(() => ({ defer: true }))
+    const recorded: unknown[] = []
+    try {
+      captureCompletedChatTurn({
+        message: { role: 'user', content: 'Where is the tea?' },
+        output: assistant(),
+        outputText: 'Tea is a good drink.',
+        sessionId: 'session-1',
+        turnId: 'turn-1',
+        personaId: 'card-1',
+        systemPrompt: '',
+        record: (input) => {
+          recorded.push(input)
+        },
+      })
+    }
+    finally {
+      stop()
+    }
+
+    expect(recorded).toEqual([])
   })
 })

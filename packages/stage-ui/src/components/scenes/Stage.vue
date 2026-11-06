@@ -32,6 +32,7 @@ import StageAvatarModelMissing from './stage-avatar-model-missing.vue'
 import StageRenderError from './stage-render-error.vue'
 
 // import { useDuckDb } from '../../composables/use-duck-db'
+import { callSpeechSelection } from '../../composables/call/speech'
 import { Emotion, EMOTION_EmotionMotionName_value, EMOTION_VRMExpressionName_value, EmotionThinkMotionName } from '../../constants/emotions'
 import { useLive2DStageMotionMagic } from '../../features/motions/live2d/use-live2d-stage-motion-magic'
 import { createAvatarTouchAggregator } from '../../libs/avatar-touch/notify'
@@ -40,6 +41,7 @@ import { getSpeechBusContext, speechOutputGetPlaybackState, speechOutputPlayback
 import { useLlmStreamingControlStore } from '../../stores/ai/chat-llm/streaming-control'
 import { useAudioContext, useSpeakingStore } from '../../stores/audio'
 import { useBackgroundStore } from '../../stores/background'
+import { useCallOrchestratorStore } from '../../stores/call-orchestrator'
 import { useAvatarTouchStore } from '../../stores/character/avatar-touch'
 import { useChatStore } from '../../stores/chat'
 import { useChatSessionStore } from '../../stores/chat/session-store'
@@ -143,6 +145,7 @@ function onVRMInteract(target: VrmInteractionTarget) {
 }
 
 const { onBeforeMessageComposed, onBeforeSend, onTokenLiteral, onTokenSpecial, onStreamEnd, onAssistantResponseEnd } = useChatStore()
+const call = useCallOrchestratorStore()
 // This context registers the hooks that speak a reply, so chat actions must run here.
 const releaseSpeechPlayerRole = usePiniaSynced().addRole(syncedRoles.speechPlayer)
 const chatHookCleanups: Array<() => void> = []
@@ -414,6 +417,7 @@ const disconnectVoiceOutput = voice.connectOutput((turn) => {
     playback,
     onSpecial: (special: string) => void playSpecialToken(special, { turnId: turn.turnId }),
     onPlaybackStart: ({ text }: { text: string }) => {
+      call.notePlayed(turn.turnId, text)
       playingCount += 1
       nowSpeaking.value = true
       speechVoicing.value = true
@@ -427,13 +431,16 @@ const disconnectVoiceOutput = voice.connectOutput((turn) => {
       }
     },
     onPlaybackEnd: () => {
+      call.notePlaybackEnded()
       playingCount -= 1
       if (playingCount === 0)
         resetSpeakingState()
     },
   }
-  if (speechMuted.value)
+  if (speechMuted.value || (call.owns(turn) && !call.speakerOn))
     return { ...output, synthesize: async () => null }
+  if (call.owns(turn))
+    return speechStore.createOutput(turn, callSpeechSelection(), output, audioContext)
   try {
     const characterId = chatSession.sessionMetas[turn.sessionId]?.characterId
     if (!characterId)
@@ -549,27 +556,49 @@ chatHookCleanups.push(onBeforeSend(async (_message, context) => {
 }))
 
 chatHookCleanups.push(onTokenLiteral(async (literal, context) => {
-  if (holdsVoice(context) && !speechMuted.value)
-    await voice.getSpeech(context)?.write(literal)
+  if (!holdsVoice(context) || speechMuted.value)
+    return
+  if (call.owns(context)) {
+    call.writeReply(context, literal)
+    return
+  }
+  await voice.getSpeech(context)?.write(literal)
 }))
 
 chatHookCleanups.push(onTokenSpecial(async (special, context) => {
   if (!holdsVoice(context))
     return
-  if (speechMuted.value)
+  if (call.owns(context))
+    call.flushReply(context.turnId)
+  if (speechMuted.value) {
     await playSpecialToken(special, { turnId: context.turnId })
-  else
-    voice.getSpeech(context)?.special(special)
+    return
+  }
+  if (call.owns(context) && !call.speakerOn)
+    return
+  voice.getSpeech(context)?.special(special)
 }))
 
 chatHookCleanups.push(onStreamEnd(async (context) => {
-  void voice.finishResponse(context).catch(error => console.error('Speech response completion failed', error))
+  call.finishReply(context.turnId)
+  void voice.finishResponse(context).then((status) => {
+    call.playbackSettled(context.turnId, status)
+  }).catch((error) => {
+    console.error('Speech response completion failed', error)
+    call.playbackSettled(context.turnId, 'failed')
+  })
 }))
 
 chatHookCleanups.push(onAssistantResponseEnd(async (_message, context) => {
   if (!holdsVoice(context))
     return
-  void voice.finishResponse(context).catch(error => console.error('Speech response completion failed', error))
+  call.finishReply(context.turnId)
+  void voice.finishResponse(context).then((status) => {
+    call.playbackSettled(context.turnId, status)
+  }).catch((error) => {
+    console.error('Speech response completion failed', error)
+    call.playbackSettled(context.turnId, 'failed')
+  })
 }))
 
 // Resume audio context on first user interaction (browser requirement)

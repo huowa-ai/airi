@@ -13,6 +13,7 @@ import { defineStore, storeToRefs } from 'pinia'
 import { onScopeDispose, shallowRef, watch } from 'vue'
 
 import { useVoiceController } from '../composables/audio/voice-controller'
+import { noteCallInterrupt, noteCallUtterance } from '../composables/call/turn'
 import { traceSpeechOutput } from '../composables/speech-output-trace'
 import { LOCAL_AGENT_ACTOR } from '../composables/use-trace'
 import { useVoiceDrafts } from '../composables/voice-drafts'
@@ -87,7 +88,10 @@ export const useVoiceStore = defineStore('voice', () => {
     () => requestTools?.(),
     (submission) => {
       const fromCall = callInputs.delete(submission.submissionId)
-      return hearing.autoSendEnabled || fromCall || callActive.value
+      const callTurn = fromCall || callActive.value
+      if (callTurn && submission.text.trim() !== '')
+        noteCallUtterance(submission.sessionId, submission.submissionId)
+      return hearing.autoSendEnabled || callTurn
     },
   )
   const activeTurns = shallowRef<readonly TurnRef[]>([])
@@ -127,6 +131,7 @@ export const useVoiceStore = defineStore('voice', () => {
       return { status: 'drafted', draftId: submission.submissionId }
     },
     recordInterruption: async (event) => {
+      noteCallInterrupt(event.turn)
       const { groupId, played, status } = event.playback
       const errorMessage = event.playback.status === 'failed' ? errorMessageFrom(event.playback.error) : undefined
       return chat.receiveInterruption({ ...event, playback: { groupId, played, status, ...(errorMessage ? { errorMessage } : {}) } })
