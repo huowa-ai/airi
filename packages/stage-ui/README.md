@@ -399,3 +399,23 @@ The default pack contains twelve generated chibi reactions of AIRI's official bl
 See [artwork provenance](src/assets/stickers/README.md) for references, exact prompts, and inspection notes.
 These are static assets. No runtime image-generation dependency is included.
 The four development-only Fluent Emoji images are removed. No old-ID migration is included.
+
+## Dance cutout
+
+The stage plays a pre-rendered cutout of 大肥鱼 in place of the Live2D model.
+The model hides before the cutout appears. The cutout hides before the model returns.
+The Dance button on the stage starts the clip. Stop dance cancels it.
+The clip also ends on its own. Then the model returns.
+
+`placeCutoutFrame` puts the cutout feet on the bottom of the Live2D model box.
+The span from the head to the feet matches that box height.
+
+`.dance-cutout-frame` in `src/features/dance-cutout/dance-cutout.vue` holds the tune values.
+
+- `--dance-height-scale` grows the clip from the foot line. `1` keeps the matched height.
+- `--dance-offset-x` shifts the clip by a fraction of the stage width. A positive value moves it right.
+- `--dance-offset-y` shifts the clip by a fraction of the stage height. A positive value moves it down.
+
+`head` and `foot` in `dafeiYuCutoutBody` set the body lines inside the frame.
+The files are `src/assets/dance-cutout/dafei-yu.webm` and `dafei-yu.webp`.
+Browsers that keep VP9 alpha play the WebM. The others play the WebP at 12 frames per second.
