@@ -31,6 +31,8 @@ const props = withDefaults(defineProps<{
   backgroundUrl?: string | null
 
   paused?: boolean
+  /** Hides the character artwork. The canvas and its background stay. */
+  characterHidden?: boolean
   mouthOpenSize?: number
   nowSpeaking?: boolean
   themeColorsHue?: number
@@ -40,6 +42,7 @@ const props = withDefaults(defineProps<{
 }>(), {
   presence: () => presenceBubbleIdle,
   paused: false,
+  characterHidden: false,
   mouthOpenSize: 0,
   nowSpeaking: false,
   themeColorsHue: 220.44,
@@ -164,13 +167,13 @@ function cancelGesture() {
 }
 
 // A paused stage does not advance the motion clock, so a reaction would wait and then play late.
-watch(() => props.paused, (paused) => {
+watch(() => props.paused || props.characterHidden, (paused) => {
   if (paused)
     cancelGesture()
 })
 
 useEventListener(() => live2dCanvasRef.value?.canvasElement(), 'pointerdown', (event: PointerEvent) => {
-  if (props.paused || gesturePointerId !== undefined || !event.isPrimary || event.button !== 0)
+  if (props.characterHidden || props.paused || gesturePointerId !== undefined || !event.isPrimary || event.button !== 0)
     return
   gesturePointerId = event.pointerId
   try {
@@ -188,7 +191,7 @@ useEventListener(() => live2dCanvasRef.value?.canvasElement(), 'pointerdown', (e
 })
 useEventListener(() => live2dCanvasRef.value?.canvasElement(), 'pointermove', (event: PointerEvent) => {
   // The primary button is held while the pointer strokes.
-  if (event.pointerId !== gesturePointerId || event.buttons % 2 !== 1)
+  if (props.characterHidden || event.pointerId !== gesturePointerId || event.buttons % 2 !== 1)
     return
   const pat = touchGestures.move(touchSampleOf(event))
   if (pat)
@@ -196,7 +199,7 @@ useEventListener(() => live2dCanvasRef.value?.canvasElement(), 'pointermove', (e
   emitTouch(pat)
 })
 useEventListener(() => live2dCanvasRef.value?.canvasElement(), 'pointerup', (event: PointerEvent) => {
-  if (event.pointerId !== gesturePointerId)
+  if (props.characterHidden || event.pointerId !== gesturePointerId)
     return
   endGesture()
   const tap = touchGestures.up(touchSampleOf(event))
@@ -228,6 +231,10 @@ watch([componentStateModel, componentStateCanvas], () => {
     : 'loading'
 })
 
+function characterLayout() {
+  return live2dModelRef.value?.characterLayout()
+}
+
 defineExpose({
   canvasElement: () => {
     return live2dCanvasRef.value?.canvasElement()
@@ -235,6 +242,7 @@ defineExpose({
   captureFrame: () => {
     return live2dCanvasRef.value?.captureFrame()
   },
+  characterLayout,
 })
 </script>
 
@@ -262,6 +270,7 @@ defineExpose({
         :width="width"
         :height="height"
         :paused="paused"
+        :character-hidden="characterHidden"
         :focus-at="mouseFocus"
         :eye-tracking="universalMotionEnabled && live2dEyeTracking"
         :eye-focus-source-active="!!activeCursorPosition"
@@ -284,7 +293,7 @@ defineExpose({
         @error="emit('error', $event)"
       />
       <Live2DPresenceBubble
-        v-if="app"
+        v-if="app && !characterHidden"
         :app="app"
         :head-anchor="() => live2dModelRef?.headAnchor()"
         :state="props.presence"

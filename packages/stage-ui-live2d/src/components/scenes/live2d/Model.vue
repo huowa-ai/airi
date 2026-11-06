@@ -52,6 +52,7 @@ import {
   useMotionUpdatePluginManualControl,
   useMotionUpdatePluginTouchReaction,
 } from '../../../composables/live2d'
+import { live2dCharacterBoxFromFit } from '../../../composables/live2d/character-layout'
 import { useFitModel } from '../../../composables/live2d/fit-model'
 import { Emotion, EmotionNeutralMotionName } from '../../../constants/emotions'
 import { useLive2D } from '../../../contexts/live2d'
@@ -68,6 +69,8 @@ const props = withDefaults(defineProps<{
   width: number
   height: number
   paused?: boolean
+  /** Hides the character artwork. The canvas and its background stay. */
+  characterHidden?: boolean
   focusAt?: { x: number, y: number }
   eyeTracking?: boolean
   eyeFocusSourceActive?: boolean
@@ -92,6 +95,7 @@ const props = withDefaults(defineProps<{
   mouthOpenSize: 0,
   nowSpeaking: false,
   paused: false,
+  characterHidden: false,
   focusAt: () => ({ x: 0, y: 0 }),
   eyeTracking: false,
   eyeFocusSourceActive: false,
@@ -198,6 +202,31 @@ const modelNormalizeParams = useFitModel(
 watch([offset, scale, modelNormalizeParams], () => {
   setScaleAndPosition()
 })
+
+function applyCharacterVisibility() {
+  if (!model.value)
+    return
+
+  model.value.visible = !props.characterHidden
+}
+
+function characterLayout() {
+  if (!model.value)
+    return undefined
+
+  return live2dCharacterBoxFromFit({
+    fitScale: modelNormalizeParams.value.scale,
+    fitX: modelNormalizeParams.value.x,
+    fitY: modelNormalizeParams.value.y,
+    modelWidth: initialModelWidth.value,
+    modelHeight: initialModelHeight.value,
+    viewScale: scale.value,
+    offsetX: offset.value.x,
+    offsetY: offset.value.y,
+  })
+}
+
+watch(() => props.characterHidden, applyCharacterVisibility)
 
 function setScaleAndPosition(animated = false) {
   if (!model.value)
@@ -391,6 +420,7 @@ async function performModelLoad() {
     initialModelHeight.value = model.value.height
     model.value.anchor.set(0.5, 0.5)
     setScaleAndPosition()
+    applyCharacterVisibility()
 
     // --- Motion
 
@@ -1136,6 +1166,7 @@ defineExpose({
   initialModelHeight,
   initialModelWidth,
   headAnchor,
+  characterLayout,
   touchAt,
   react,
   playTouchMotion,

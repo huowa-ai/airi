@@ -422,3 +422,7 @@ notifications:
       title: 续费扣款失败
       body: 将于 {retryAt} 重试。请更新付款方式以继续使用 {plan}。
       body-no-retry: 请更新付款方式以继续使用 {plan}。
+
+dance-cutout:
+  start: 跳舞
+  stop: 停止跳舞

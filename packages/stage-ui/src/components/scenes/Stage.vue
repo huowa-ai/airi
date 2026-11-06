@@ -33,6 +33,7 @@ import StageRenderError from './stage-render-error.vue'
 
 // import { useDuckDb } from '../../composables/use-duck-db'
 import { Emotion, EMOTION_EmotionMotionName_value, EMOTION_VRMExpressionName_value, EmotionThinkMotionName } from '../../constants/emotions'
+import { DanceCutout, useDanceCutout } from '../../features/dance-cutout'
 import { useLive2DStageMotionMagic } from '../../features/motions/live2d/use-live2d-stage-motion-magic'
 import { createAvatarTouchAggregator } from '../../libs/avatar-touch/notify'
 import { syncedRoles, usePiniaSynced } from '../../libs/pinia/synced-context'
@@ -76,6 +77,7 @@ const componentState = defineModel<'pending' | 'loading' | 'mounted'>('state', {
 
 const vrmViewerRef = ref<InstanceType<typeof ThreeScene>>()
 const live2dSceneRef = ref<InstanceType<typeof Live2DScene>>()
+const { hidesModel: danceHidesModel, stop: stopDanceCutout } = useDanceCutout()
 const spineSceneRef = ref<InstanceType<typeof SpineScene>>()
 const tachieSceneRef = ref<InstanceType<typeof TachieScene>>()
 const mmdSceneRef = ref<InstanceType<typeof MMDScene>>()
@@ -182,6 +184,15 @@ async function retryStageRenderer() {
 watch([stageModelRenderer, stageModelSelected, stageModelSelectedUrl], () => {
   clearStageRenderError()
 })
+
+watch(stageModelRenderer, (renderer) => {
+  if (renderer !== 'live2d')
+    void stopDanceCutout()
+})
+
+function readLive2dLayout() {
+  return live2dSceneRef.value?.characterLayout()
+}
 
 // Caption + Presentation broadcast channels
 const { post: postCaption } = useBroadcastChannel<CaptionChannelEvent, CaptionChannelEvent>({ name: 'airi-caption-overlay' })
@@ -693,6 +704,7 @@ defineExpose({
         :mouth-open-size="mouthOpenSize"
         :now-speaking="nowSpeaking"
         :paused="paused"
+        :character-hidden="danceHidesModel"
         :theme-colors-hue="themeColorsHue"
         :theme-colors-hue-dynamic="themeColorsHueDynamic"
         :live2d-shadow-enabled="live2dShadowEnabled"
@@ -700,6 +712,10 @@ defineExpose({
         :live2d-render-scale="live2dRenderScale"
         @error="handleStageRenderError"
         @touch="avatarTouchAggregator.record"
+      />
+      <DanceCutout
+        v-if="stageModelRenderer === 'live2d' && showStage"
+        :layout="readLive2dLayout"
       />
       <ThreeScene
         v-if="stageModelRenderer === 'vrm' && showStage"
