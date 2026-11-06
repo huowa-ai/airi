@@ -59,9 +59,9 @@ Tools, Settings, and a later voice hook call `useMemoryStore`. The store calls o
 
 | Id | Where it lives now | Rule |
 | --- | --- | --- |
-| Team | `TENCENTDB_MEMORY_TEAM_ID` | One deployment. Every runtime that writes must send the same value. This package does not check other runtimes. |
-| User | `TENCENTDB_MEMORY_USER_ID` | The owner. Same rule as the team id. |
-| Agent | Card id, or `airi:general` | `persona` on the fact. Empty persona means general. `agentIdForEntry` maps that to `airi:general`. |
+| Team | `resolveMemoryScope` | A private team is `u_<platform>_<userId>`. A group team is `g_<platform>_<groupId>`. A confirmed identity link can replace the private team. |
+| User | Real speaker | On this device the speaker is the stable local account id. A group write keeps the speaker id. |
+| Agent | Card id, or `airi:general` | Facts and chat use this same id. `agentIdForEntry` maps an empty persona to `airi:general`. |
 | Entry | UUIDv7 from the store, or an id the caller already has | Stable fact id. A later retry uses the same id. |
 | Session | `ChatSessionMeta.sessionId`, voice `TurnRef.sessionId` | Provenance only. It does not split the card's fact list. |
 | Turn | `TurnRef.turnId` | Provenance only. |
@@ -69,7 +69,7 @@ Tools, Settings, and a later voice hook call `useMemoryStore`. The store calls o
 
 The v3 data plane takes `team_id`, `agent_id`, and `user_id` in the body or in `x-tdai-*` headers. This client sends them in the body.
 
-Persona isolation matches the store today: a card reads its facts and the general facts. Session isolation of facts is not implemented. A Discord scene and the owner chat can already share one card's facts, because the store has no session filter. Whether a scene fact stays visible on every session of that card is unresolved. This package does not add a filter.
+Persona isolation matches the store today: a card reads its facts and the general facts. A private scope and a group scope do not share those facts. The session id does not split one scope's fact list. Cross-group sharing stays off. The resolver accepts a typed hook and does not call it.
 
 ### Record, source, and media refs
 
@@ -113,7 +113,7 @@ L0 facts are the service list. The page also reads `POST /v3/atomic/query`, `POS
 
 L3 is one persona node per character. A markdown heading splits the detail into sections. It does not add a node. L2 is one node per scene file. A directory path is not a node.
 
-L0 and L1 follow the team, the user, and the character. L2 and L3 follow the team and the character only. The gateway scope is `team:<team id>|agent:<agent id>`. A second user in that team and character receives the same scenes and the same persona. The detail says so. It does not present those records as this user's private facts. Per-user isolation needs a separate character id or a separate team id for each user. That change is a later pull request.
+L0 and L1 follow the team, the user, and the character. L2 and L3 follow the team and the character only. The gateway scope is `team:<team id>|agent:<agent id>`. A private account and a group each get their own team, so their scenes and persona stay apart. Inside one group team, those layers are shared. The graph shows the current team. The L2 and L3 detail names that team.
 
 Strings go in the English source under `packages/i18n` only. Reduced motion does not start `3d-force-graph`. The fact list stays on the page. Colors for the graph use the theme hue.
 
@@ -198,11 +198,11 @@ The graph reads `atomic/query`, `scenario/ls`, `scenario/read`, and `core/read`.
 
 ## Service mode
 
-The live memory path is MemoryCore only. `useMemoryStore` reads and writes that service for one team id and one user id. It does not call the device repository. When the service is off, the live list is empty. When the address, the team id, or the user id is missing, the list is empty and the store reports an error. A failed read does the same. The store does not fill the list from device facts.
+The live memory path is MemoryCore only. `useMemoryStore` reads and writes that service for the resolved scope. It does not call the device repository. When the service is off, the live list is empty. When the address is missing, the list is empty and the store reports an error. A failed read does the same. The store does not fill the list from device facts.
 
 The settings page can turn the memory service on. When the service is on, the character reads and writes only MemoryCore. Memories that remain only on the device stay out of the prompt and out of Settings.
 
-The page calls MemoryCore over HTTP. The address, the team id, the user id, the service id, and the optional API key are device settings. The key is not in the source bundle. A later channel RPC can move the key off the page. That move is still open.
+The page calls MemoryCore over HTTP. The address, the local account id, the service id, and the optional API key are device settings. The private team is derived. The key is not in the source bundle. A later channel RPC can move the key off the page. That move is still open.
 
 A finished chat turn is L0 on the character card, or on `airi:general`. The stage uses `onChatTurnComplete`. It does not listen for `input:text`. A failed or interrupted turn writes nothing. The write is queued, so a gateway error does not block the chat.
 
@@ -212,7 +212,7 @@ This fact role depends on MemoryCore. `handleConversationAdd` notifies L1 extrac
 
 The reviewed catalog has no atomic create route. `POST /v3/atomic/update` returns 404 when the id is new.
 
-Per-user team ids stay out of this change. The write uses the current team id and the current user id.
+`resolveMemoryScope` chooses the team, the user, the agent, and the session for each read and write. The local account id comes from settings, or it is created once and stored. An empty identity map does not merge platform accounts. `confirmIdentityLink` stores a link only when the caller passes confirmation. Old rows under a fixed team id are left in place.
 
 ## Unresolved
 
@@ -224,5 +224,5 @@ Per-user team ids stay out of this change. The write uses the current team id an
 - What is the frame cost of `3d-force-graph` on a large fact list?
 - How is a video frame captured, given that chat attachments have no video type?
 - What is the whale mesh? Shape direction is approved. The zones are the head, the body, the back, the tail, and the fins. Geometry stays approximate.
-- How does one user keep a private L2 scene and L3 persona? The gateway scopes those layers by team and character, not by user. A later change can give each user a character id or a team id.
+- Does standalone MemoryCore enforce team and agent ownership on v3 writes, or does it store any team id the client sends?
 - When does same-turn recall highlight a fact without drawing a fake pulse?

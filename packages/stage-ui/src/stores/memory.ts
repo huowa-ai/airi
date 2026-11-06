@@ -1,15 +1,18 @@
-import type { ChatTurnInput, MemoryStorage, MemoryV3Client } from '@proj-airi/tencentdb-memory'
+import type { IdentityLink, IdentityMap, MemoryScope, MemoryScopeRequest, MemoryStorage, MemoryV3Client } from '@proj-airi/tencentdb-memory'
 
 import type { MemoryEntry, MemoryWrite } from '../types/memory'
+import type { ChatTurnRecord } from './chat-turn-memory'
 
 import { errorMessageFrom } from '@moeru/std'
 import { useLocalStorageManualReset } from '@proj-airi/stage-shared/composables'
-import { agentIdForEntry, createChatTurnQueue, createMemoryClient, createRemoteMemoryStorage, GENERAL_AGENT_ID, memoryClientEnv, readMemoryClientConfig, readMemoryLayers } from '@proj-airi/tencentdb-memory'
+import { bindMemoryScope, confirmIdentityLink, createChatTurnQueue, createMemoryClient, createRemoteMemoryStorage, GENERAL_AGENT_ID, localScopeSessionId, memoryClientEnv, parseSceneBinding, readIdentityMap, readMemoryClientConfig, readMemoryLayers, resolveLocalAccountId, resolveMemoryScope, sanitizeScopeId } from '@proj-airi/tencentdb-memory'
 import { useBroadcastChannel } from '@vueuse/core'
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 
 import { EMPTY_MEMORY_LAYERS, viewMemoryLayers } from './memory-layers'
+
+const serviceConfigError = 'Set the service address.'
 
 /** The live list is empty until a MemoryCore read for this service identity succeeds. */
 const NO_ENTRIES: MemoryEntry[] = []
@@ -19,7 +22,7 @@ export type MemoryServiceRead = 'off' | 'loading' | 'error' | 'ready'
 
 /**
  * Long-term memory as a small index and one entry per fact, kept by the character itself.
- * The live list is the MemoryCore service for one team and one user. The device repository is not on this path.
+ * The live list is the MemoryCore service for the local private scope. The device repository is not on this path.
  * After each change, the other windows read the service again.
  *
  * Use when:
@@ -41,12 +44,16 @@ export const useMemoryStore = defineStore('memory', () => {
   const serviceUserId = useLocalStorageManualReset('memory/service-user-id', '')
   const serviceApiKey = useLocalStorageManualReset('memory/service-api-key', '')
   const serviceId = useLocalStorageManualReset('memory/service-id', '')
+  const localAccountId = useLocalStorageManualReset('memory/local-account-id', '')
+  const identityMap = useLocalStorageManualReset<IdentityMap>('memory/identity-map', { links: [] })
   const serviceError = ref('')
   const serviceRead = ref<MemoryServiceRead>('loading')
   const entries = ref<MemoryEntry[]>(NO_ENTRIES)
   const layers = ref(EMPTY_MEMORY_LAYERS)
   let remote: MemoryStorage | undefined
   let memoryClient: MemoryV3Client | undefined
+  const storages = new Map<string, MemoryStorage>()
+  const scopedFacts = new Map<string, MemoryEntry[]>()
   let serviceGeneration = 0
   const chatTurns = createChatTurnQueue({
     onError: (error) => {
@@ -58,8 +65,71 @@ export const useMemoryStore = defineStore('memory', () => {
     entries.value = NO_ENTRIES
   }
 
+  function storedIdentityMap() {
+    return readIdentityMap(identityMap.value)
+  }
+
+  function syncAccountId() {
+    const resolved = resolveLocalAccountId({
+      settingsUserId: serviceUserId.value,
+      storedAccountId: localAccountId.value,
+      createId: () => crypto.randomUUID(),
+    })
+    if (resolved.storedAccountId !== undefined && localAccountId.value !== resolved.storedAccountId)
+      localAccountId.value = resolved.storedAccountId
+    return resolved.accountId
+  }
+
+  function localScope(): MemoryScope {
+    return resolveMemoryScope({
+      platform: 'local',
+      userId: syncAccountId(),
+      sessionId: localScopeSessionId,
+      identityMap: storedIdentityMap(),
+    })
+  }
+
+  function resolveRequest(request?: MemoryScopeRequest) {
+    if (!request)
+      return localScope()
+    return resolveMemoryScope({
+      ...request,
+      userId: request.userId || syncAccountId(),
+      identityMap: request.identityMap ?? storedIdentityMap(),
+    })
+  }
+
+  function scopeKey(scope: MemoryScope) {
+    return `${scope.teamId}\0${scope.userId}`
+  }
+
+  function sameScope(left: MemoryScope, right: MemoryScope) {
+    return left.teamId === right.teamId && left.userId === right.userId
+  }
+
+  function storageFor(scope: MemoryScope) {
+    const client = memoryClient
+    if (!client)
+      return undefined
+    const key = scopeKey(scope)
+    const existing = storages.get(key)
+    if (existing)
+      return existing
+    const created = createRemoteMemoryStorage(bindMemoryScope(client, scope))
+    storages.set(key, created)
+    return created
+  }
+
+  function factsFor(scope: MemoryScope) {
+    if (sameScope(scope, localScope()))
+      return entries.value
+    return scopedFacts.get(scopeKey(scope)) ?? NO_ENTRIES
+  }
+
   function connectService() {
     serviceGeneration += 1
+    storages.clear()
+    scopedFacts.clear()
     clearLiveEntries()
     layers.value = EMPTY_MEMORY_LAYERS
     if (!serviceEnabled.value) {
@@ -70,10 +140,11 @@ export const useMemoryStore = defineStore('memory', () => {
       return
     }
 
+    const scope = localScope()
     const config = readMemoryClientConfig({
       [memoryClientEnv.endpoint]: serviceEndpoint.value,
-      [memoryClientEnv.teamId]: serviceTeamId.value,
-      [memoryClientEnv.userId]: serviceUserId.value,
+      [memoryClientEnv.teamId]: scope.teamId,
+      [memoryClientEnv.userId]: scope.userId,
       [memoryClientEnv.agentId]: GENERAL_AGENT_ID,
       [memoryClientEnv.apiKey]: serviceApiKey.value,
       [memoryClientEnv.serviceId]: serviceId.value,
@@ -81,13 +152,14 @@ export const useMemoryStore = defineStore('memory', () => {
     if (!config.configured) {
       remote = undefined
       memoryClient = undefined
-      serviceError.value = 'Set the service address, the team id, and the user id.'
+      serviceError.value = serviceConfigError
       serviceRead.value = 'error'
       return
     }
 
     memoryClient = createMemoryClient(config.config)
     remote = createRemoteMemoryStorage(memoryClient)
+    storages.set(scopeKey(scope), remote)
     serviceError.value = ''
     serviceRead.value = 'loading'
   }
@@ -137,20 +209,70 @@ export const useMemoryStore = defineStore('memory', () => {
     return pendingLoad.catch(() => {})
   }
 
-  /** Reads the entries again after a change, and tells the other windows. */
-  async function publish(ids: string[]) {
-    await load()
+  /** Reads one scope again after a change, and tells the other windows. */
+  async function publish(scope: MemoryScope, ids: string[]) {
+    if (sameScope(scope, localScope()))
+      await load()
+    else
+      await refreshScopedFacts(scope)
     post(ids)
+  }
+
+  async function refreshScopedFacts(scope: MemoryScope) {
+    const storage = storageFor(scope)
+    if (!storage)
+      return
+    scopedFacts.set(scopeKey(scope), await storage.list())
+  }
+
+  function failScope(scope: MemoryScope, error: unknown) {
+    if (!sameScope(scope, localScope()))
+      return
+    serviceError.value = publicServiceError(error)
+    serviceRead.value = 'error'
+    clearLiveEntries()
+  }
+
+  /** Loads the fact list for one scope before a prompt reads it. A group read never copies the private list. */
+  async function prepareScope(request?: MemoryScopeRequest) {
+    const scope = resolveRequest(request)
+    if (sameScope(scope, localScope())) {
+      await load()
+      return
+    }
+    try {
+      await refreshScopedFacts(scope)
+    }
+    catch {
+      // A failed group read keeps the last group list. It does not show private facts.
+    }
+  }
+
+  function requestForSession(input: { sessionId: string, personaId?: string, binding?: string, speakerId?: string }): MemoryScopeRequest {
+    const scene = input.binding ? parseSceneBinding(input.binding) : undefined
+    return {
+      platform: scene?.platform ?? 'local',
+      userId: input.speakerId || syncAccountId(),
+      ...(scene ? { groupId: scene.groupId } : {}),
+      personaId: input.personaId,
+      sessionId: input.sessionId,
+      identityMap: storedIdentityMap(),
+    }
+  }
+
+  function confirmIdentities(link: IdentityLink) {
+    identityMap.value = confirmIdentityLink(storedIdentityMap(), link, true)
   }
 
   /**
    * The index for a card: its own memories, then general ones, each as an id and its description.
    * A run reads it when it starts, from the entries that the window read last.
    */
-  function indexFor(personaId: string) {
+  function indexFor(personaId: string, request?: MemoryScopeRequest) {
+    const list = factsFor(resolveRequest(request))
     const line = (entry: MemoryEntry) => `- ${entry.id}: ${entry.description}`
-    const own = entries.value.filter(entry => entry.persona === personaId).map(line)
-    const general = entries.value.filter(entry => !entry.persona).map(line)
+    const own = list.filter(entry => entry.persona === personaId).map(line)
+    const general = list.filter(entry => !entry.persona).map(line)
     return [
       ...(own.length ? [`Your own:\n${own.join('\n')}`] : []),
       ...(general.length ? [`General:\n${general.join('\n')}`] : []),
@@ -170,8 +292,8 @@ export const useMemoryStore = defineStore('memory', () => {
   }
 
   /** Reads an entry that the persona can see by its id: one of its own, or a general one. */
-  function read(id: string, personaId: string) {
-    return entries.value.find(entry => entry.id === id && (!entry.persona || entry.persona === personaId))
+  function read(id: string, personaId: string, request?: MemoryScopeRequest) {
+    return factsFor(resolveRequest(request)).find(entry => entry.id === id && (!entry.persona || entry.persona === personaId))
   }
 
   /**
@@ -180,62 +302,62 @@ export const useMemoryStore = defineStore('memory', () => {
    * entry that only the owner changes, adds a new entry.
    * Resolves to the stored entry, or undefined when the body is empty or the service is not available.
    */
-  async function write(input: MemoryWrite, personaId: string) {
+  async function write(input: MemoryWrite, personaId: string, request?: MemoryScopeRequest) {
     const body = input.body.trim()
     if (!body)
       return undefined
-    if (!remote) {
+    const scope = resolveRequest(request)
+    const storage = storageFor(scope)
+    if (!storage) {
       if (serviceEnabled.value && serviceError.value === '')
-        serviceError.value = 'Set the service address, the team id, and the user id.'
+        serviceError.value = serviceConfigError
       return undefined
     }
     try {
-      const result = await remote.write({ id: input.id, description: input.description.trim(), body }, personaId, Date.now())
+      const result = await storage.write({ id: input.id, description: input.description.trim(), body }, personaId, Date.now())
       if (result.outcome === 'empty')
         return undefined
       if (result.outcome !== 'saved' && result.outcome !== 'unchanged') {
-        await publish([])
+        await publish(scope, [])
         return undefined
       }
-      await publish([result.entry.id])
+      await publish(scope, [result.entry.id])
       return result.entry
     }
     catch (error) {
-      serviceError.value = publicServiceError(error)
-      serviceRead.value = 'error'
-      clearLiveEntries()
+      failScope(scope, error)
       return undefined
     }
   }
 
   /** Makes a card's memory general, so every card reads it. */
-  async function makeGeneral(entry: Pick<MemoryEntry, 'id'>) {
-    if (!remote)
+  async function makeGeneral(entry: Pick<MemoryEntry, 'id'>, request?: MemoryScopeRequest) {
+    const scope = resolveRequest(request)
+    const storage = storageFor(scope)
+    if (!storage)
       return
     try {
-      const result = await remote.makeGeneral(entry.id, Date.now())
+      const result = await storage.makeGeneral(entry.id, Date.now())
       if (result.outcome === 'saved')
-        await publish([entry.id])
+        await publish(scope, [entry.id])
     }
     catch (error) {
-      serviceError.value = publicServiceError(error)
-      serviceRead.value = 'error'
-      clearLiveEntries()
+      failScope(scope, error)
     }
   }
 
   /** Removes one entry from Settings. */
-  async function remove(entry: Pick<MemoryEntry, 'id'>) {
-    if (!remote)
+  async function remove(entry: Pick<MemoryEntry, 'id'>, request?: MemoryScopeRequest) {
+    const scope = resolveRequest(request)
+    const storage = storageFor(scope)
+    if (!storage)
       return
     try {
-      await remote.remove([entry.id], Date.now())
-      await publish([entry.id])
+      await storage.remove([entry.id], Date.now())
+      await publish(scope, [entry.id])
     }
     catch (error) {
-      serviceError.value = publicServiceError(error)
-      serviceRead.value = 'error'
-      clearLiveEntries()
+      failScope(scope, error)
     }
   }
 
@@ -244,30 +366,44 @@ export const useMemoryStore = defineStore('memory', () => {
    * The call returns before MemoryCore answers. A write failure does not change the fact list.
    * Nothing is queued when memory is off or the service client is missing.
    */
-  function recordChatTurn(input: Omit<ChatTurnInput, 'agentId'> & { personaId: string }) {
+  function recordChatTurn(input: ChatTurnRecord) {
     const client = memoryClient
     if (!enabled.value || !client)
       return false
-    return chatTurns.enqueue(client, {
-      ...input,
-      agentId: agentIdForEntry({ persona: input.personaId || undefined }),
+    const scope = resolveRequest(requestForSession({
+      sessionId: input.sessionId,
+      personaId: input.personaId,
+      binding: input.binding,
+      speakerId: input.speakerId,
+    }))
+    return chatTurns.enqueue(bindMemoryScope(client, scope), {
+      sessionId: scope.sessionId,
+      turnId: input.turnId,
+      agentId: scope.agentId,
+      userText: input.userText,
+      assistantText: input.assistantText,
+      imageOnly: input.imageOnly,
+      systemPrompt: input.systemPrompt,
+      timestamp: input.timestamp,
+      interrupted: input.interrupted,
+      failed: input.failed,
     })
   }
 
   /** Forgets an entry of the card by its id. General memories belong to the owner, so a run cannot forget them. */
-  async function forget(id: string, personaId: string) {
-    if (!remote)
+  async function forget(id: string, personaId: string, request?: MemoryScopeRequest) {
+    const scope = resolveRequest(request)
+    const storage = storageFor(scope)
+    if (!storage)
       return false
     try {
-      const forgot = await remote.forget(id, personaId, Date.now())
+      const forgot = await storage.forget(id, personaId, Date.now())
       if (forgot)
-        await publish([id])
+        await publish(scope, [id])
       return forgot
     }
     catch (error) {
-      serviceError.value = publicServiceError(error)
-      serviceRead.value = 'error'
-      clearLiveEntries()
+      failScope(scope, error)
       return false
     }
   }
@@ -278,20 +414,41 @@ export const useMemoryStore = defineStore('memory', () => {
     if (client)
       await client.clear(Date.now()).catch(() => {})
     serviceEnabled.reset()
+    const pending = new Set(storages.values())
+    if (remote)
+      pending.add(remote)
+    for (const storage of pending)
+      await storage.clear(Date.now()).catch(() => {})
     remote = undefined
     memoryClient = undefined
+    storages.clear()
+    scopedFacts.clear()
     clearLiveEntries()
     layers.value = EMPTY_MEMORY_LAYERS
     serviceError.value = ''
     serviceRead.value = 'off'
-    await publish([])
+    post([])
   }
 
   function reload() {
     void load().catch(error => console.warn('[memory] Failed to read the entries:', errorMessageFrom(error)))
   }
+  const scope = computed(() => {
+    const account = sanitizeScopeId(serviceUserId.value) || sanitizeScopeId(localAccountId.value)
+    if (!account)
+      return undefined
+    return resolveMemoryScope({
+      platform: 'local',
+      userId: account,
+      sessionId: localScopeSessionId,
+      identityMap: storedIdentityMap(),
+    })
+  })
+  const accountId = computed(() => sanitizeScopeId(serviceUserId.value) || sanitizeScopeId(localAccountId.value))
+
+  syncAccountId()
   watch(changed, reload)
-  watch([serviceEnabled, serviceEndpoint, serviceTeamId, serviceUserId, serviceApiKey, serviceId], () => {
+  watch([serviceEnabled, serviceEndpoint, serviceUserId, serviceApiKey, serviceId, localAccountId, identityMap], () => {
     connectService()
     reload()
   })
@@ -306,12 +463,19 @@ export const useMemoryStore = defineStore('memory', () => {
     serviceUserId,
     serviceApiKey,
     serviceId,
+    localAccountId,
+    identityMap,
+    accountId,
+    scope,
     serviceError,
     serviceRead,
     entries: computed(() => entries.value),
     layers,
     listFacts,
     ready,
+    prepareScope,
+    requestForSession,
+    confirmIdentities,
     indexFor,
     read,
     write,

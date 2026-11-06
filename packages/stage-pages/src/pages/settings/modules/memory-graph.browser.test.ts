@@ -1,7 +1,7 @@
 import en from '@proj-airi/i18n/locales/en'
 
 import { useMemoryStore } from '@proj-airi/stage-ui/stores/memory'
-import { clearMemoryServiceSettings, createMemoryCoreFetch, enableMemoryService } from '@proj-airi/stage-ui/stores/memory-core-fake'
+import { clearMemoryServiceSettings, createMemoryCoreFetch, enableMemoryService, localServiceTeamId } from '@proj-airi/stage-ui/stores/memory-core-fake'
 import { createPinia, disposePinia } from 'pinia'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render } from 'vitest-browser-vue'
@@ -68,11 +68,11 @@ describe('memory graph page', () => {
 
   it('shows the service error and no invented facts when the service is unreachable', async () => {
     enableMemoryService()
-    localStorage.removeItem('memory/service-team-id')
+    localStorage.removeItem('memory/service-endpoint')
     const { screen, memory } = await renderPage()
     await memory.write({ description: 'Device only', body: 'Porridge on this device.' }, 'airi')
 
-    await expect.element(screen.getByText('Set the service address, the team id, and the user id.')).toBeVisible()
+    await expect.element(screen.getByText('Set the service address.')).toBeVisible()
     await expect.element(screen.getByText('Porridge on this device.')).not.toBeInTheDocument()
   })
 
@@ -109,6 +109,7 @@ describe('memory graph page', () => {
 
   it('shows fixture L1 atoms, one L2 scene, and one L3 persona', async () => {
     const gateway = createMemoryCoreFetch()
+    const team = localServiceTeamId()
     gateway.seed({
       facts: memoryGraphFixture.facts,
       atoms: memoryGraphFixture.atoms.map(atom => ({ id: atom.id, type: atom.type, content: atom.content, ...(atom.background ? { background: atom.background } : {}) })),
@@ -117,7 +118,7 @@ describe('memory graph page', () => {
         ...memoryGraphFixture.scenes.map(scene => ({ path: scene.path, ...(scene.summary ? { summary: scene.summary } : {}), ...(scene.content ? { content: scene.content } : {}) })),
       ],
       cores: memoryGraphFixture.cores.map(core => ({ content: core.content })),
-    })
+    }, team, 'user-1')
     vi.stubGlobal('fetch', gateway.fetch)
     enableMemoryService()
     preferReducedMotion(false)
@@ -128,12 +129,13 @@ describe('memory graph page', () => {
     await expect.element(screen.getByText('L1 atom').first()).toBeVisible()
     await expect.element(screen.getByText('L2 scene').first()).toBeVisible()
     await expect.element(screen.getByText('L3 persona').first()).toBeVisible()
-    await expect.element(screen.getByText('Scenes and the persona follow the team and the character. They are not limited to this user.')).toBeVisible()
+    await expect.element(screen.getByText(`Current scope: team ${team}.`)).toBeVisible()
+    await expect.element(screen.getByText(`Scenes and the persona follow team ${team} and the character.`)).toBeVisible()
     await expect.element(screen.getByRole('button', { name: /Folder/ })).not.toBeInTheDocument()
     await page.screenshot({ path: '/workspace/packages/stage-pages/src/pages/settings/modules/memory-graph-layers.shot.png' })
 
     await screen.getByRole('button', { name: /Calm companion/ }).click()
-    await expect.element(screen.getByText('This record follows the team and the character. It is not limited to this user.')).toBeVisible()
+    await expect.element(screen.getByText(`This record follows team ${team} and the character.`)).toBeVisible()
     await expect.element(screen.getByRole('heading', { name: 'Drinks' })).toBeVisible()
     await expect.element(screen.getByText('Unknown character')).not.toBeInTheDocument()
     await page.screenshot({ path: '/workspace/packages/stage-pages/src/pages/settings/modules/memory-graph-persona.shot.png' })

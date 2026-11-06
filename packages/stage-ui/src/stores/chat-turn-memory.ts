@@ -3,8 +3,14 @@ import type { ChatTurnInput } from '@proj-airi/tencentdb-memory'
 
 import { extractMessageText } from '../libs/chat-sync/wire-message'
 
-/** Fields the memory store queues. The store adds the chat agent id. */
-export type ChatTurnRecord = Omit<ChatTurnInput, 'agentId'> & { personaId: string }
+/** Fields the memory store queues. The store resolves the agent id and the team. */
+export type ChatTurnRecord = Omit<ChatTurnInput, 'agentId'> & {
+  personaId: string
+  /** Scene binding, such as `discord:channel:a`. Absent for a private chat. */
+  binding?: string
+  /** Platform speaker. Absent means the local account. */
+  speakerId?: string
+}
 
 /**
  * Hands one finished chat turn to the memory store.
@@ -18,6 +24,8 @@ export function captureCompletedChatTurn(options: {
   turnId: string
   personaId: string
   systemPrompt: string
+  binding?: string
+  speakerId?: string
   record: (input: ChatTurnRecord) => void
 }) {
   const spoken = userSpeech(options.message)
@@ -32,6 +40,8 @@ export function captureCompletedChatTurn(options: {
     timestamp: new Date().toISOString(),
     interrupted: options.output.interrupted === true,
     failed: options.message.role === 'error',
+    ...(options.binding ? { binding: options.binding } : {}),
+    ...(options.speakerId ? { speakerId: options.speakerId } : {}),
   })
 }
 

@@ -31,7 +31,13 @@ export interface ConversationMessageInput {
   timestamp?: string
 }
 
-export interface AddConversationInput {
+/** Team and user for one call. Absent fields use the client config. */
+export interface MemoryCallScope {
+  teamId?: string
+  userId?: string
+}
+
+export interface AddConversationInput extends MemoryCallScope {
   sessionId: string
   messages: ConversationMessageInput[]
   /** Replaces the config agent id for this call. */
@@ -44,7 +50,7 @@ export interface AddConversationResult {
   totalCount: number
 }
 
-export interface SearchConversationInput {
+export interface SearchConversationInput extends MemoryCallScope {
   query: string
   limit?: number
   sessionId?: string
@@ -67,7 +73,7 @@ export interface SearchConversationResult {
   messages: ConversationHit[]
 }
 
-export interface QueryConversationInput {
+export interface QueryConversationInput extends MemoryCallScope {
   sessionId?: string
   agentId?: string
   limit?: number
@@ -79,7 +85,7 @@ export interface QueryConversationResult {
   total: number
 }
 
-export interface DeleteConversationInput {
+export interface DeleteConversationInput extends MemoryCallScope {
   messageIds?: string[]
   sessionIds?: string[]
   agentId?: string
@@ -102,7 +108,7 @@ export interface AtomicRecord {
   agentId?: string
 }
 
-export interface QueryAtomicInput {
+export interface QueryAtomicInput extends MemoryCallScope {
   agentId?: string
   limit?: number
   offset?: number
@@ -124,7 +130,7 @@ export interface ScenarioRecord {
   agentId?: string
 }
 
-export interface ListScenariosInput {
+export interface ListScenariosInput extends MemoryCallScope {
   agentId?: string
   pathPrefix?: string
 }
@@ -134,7 +140,7 @@ export interface ListScenariosResult {
   total: number
 }
 
-export interface ReadScenarioInput {
+export interface ReadScenarioInput extends MemoryCallScope {
   path: string
   agentId?: string
 }
@@ -156,7 +162,7 @@ export interface CoreRecord {
   updatedAt?: string
 }
 
-export interface ReadCoreInput {
+export interface ReadCoreInput extends MemoryCallScope {
   agentId?: string
 }
 
@@ -302,9 +308,9 @@ export function createMemoryClient(config: MemoryClientConfig, options: MemoryV3
       assertMessages(input.messages)
 
       return post(fetchImpl, config, secrets, timeoutMs, addPath, {
-        team_id: config.teamId,
+        team_id: input.teamId ?? config.teamId,
         agent_id: agentId,
-        user_id: config.userId,
+        user_id: input.userId ?? config.userId,
         session_id: input.sessionId,
         messages: input.messages.map(message => ({
           role: message.role,
@@ -327,9 +333,9 @@ export function createMemoryClient(config: MemoryClientConfig, options: MemoryV3
         assertSessionId(searchPath, input.sessionId)
 
       return post(fetchImpl, config, secrets, timeoutMs, searchPath, {
-        team_id: config.teamId,
+        team_id: input.teamId ?? config.teamId,
         agent_id: agentId,
-        user_id: config.userId,
+        user_id: input.userId ?? config.userId,
         query: input.query,
         ...(input.limit === undefined ? {} : { limit: input.limit }),
         ...(input.sessionId === undefined ? {} : { session_id: input.sessionId }),
@@ -347,9 +353,9 @@ export function createMemoryClient(config: MemoryClientConfig, options: MemoryV3
         assertSessionId(queryPath, input.sessionId)
 
       return post(fetchImpl, config, secrets, timeoutMs, queryPath, {
-        team_id: config.teamId,
+        team_id: input.teamId ?? config.teamId,
         agent_id: agentId,
-        user_id: config.userId,
+        user_id: input.userId ?? config.userId,
         ...(input.sessionId === undefined ? {} : { session_id: input.sessionId }),
         ...(input.limit === undefined ? {} : { limit: input.limit }),
         ...(input.offset === undefined ? {} : { offset: input.offset }),
@@ -368,9 +374,9 @@ export function createMemoryClient(config: MemoryClientConfig, options: MemoryV3
         rejectInput(deletePath, 'Delete needs message ids or session ids.')
 
       return post(fetchImpl, config, secrets, timeoutMs, deletePath, {
-        team_id: config.teamId,
+        team_id: input.teamId ?? config.teamId,
         agent_id: agentId,
-        user_id: config.userId,
+        user_id: input.userId ?? config.userId,
         ...(messageIds.length === 0 ? {} : { message_ids: messageIds }),
         ...(sessionIds.length === 0 ? {} : { session_ids: sessionIds }),
       }, deleteDataSchema, data => ({
@@ -384,9 +390,9 @@ export function createMemoryClient(config: MemoryClientConfig, options: MemoryV3
       assertPage(atomicQueryPath, input.limit, input.offset)
 
       return post(fetchImpl, config, secrets, timeoutMs, atomicQueryPath, {
-        team_id: config.teamId,
+        team_id: input.teamId ?? config.teamId,
         agent_id: agentId,
-        user_id: config.userId,
+        user_id: input.userId ?? config.userId,
         ...(input.type === undefined ? {} : { type: input.type }),
         ...(input.limit === undefined ? {} : { limit: input.limit }),
         ...(input.offset === undefined ? {} : { offset: input.offset }),
@@ -403,9 +409,9 @@ export function createMemoryClient(config: MemoryClientConfig, options: MemoryV3
         assertRelativePath(scenarioListPath, input.pathPrefix)
 
       return post(fetchImpl, config, secrets, timeoutMs, scenarioListPath, {
-        team_id: config.teamId,
+        team_id: input.teamId ?? config.teamId,
         agent_id: agentId,
-        user_id: config.userId,
+        user_id: input.userId ?? config.userId,
         ...(input.pathPrefix === undefined ? {} : { path_prefix: input.pathPrefix }),
       }, scenarioListSchema, data => ({
         entries: data.entries.map(mapScenario),
@@ -419,9 +425,9 @@ export function createMemoryClient(config: MemoryClientConfig, options: MemoryV3
       assertRelativePath(scenarioReadPath, input.path)
 
       return post(fetchImpl, config, secrets, timeoutMs, scenarioReadPath, {
-        team_id: config.teamId,
+        team_id: input.teamId ?? config.teamId,
         agent_id: agentId,
-        user_id: config.userId,
+        user_id: input.userId ?? config.userId,
         path: input.path,
       }, scenarioReadSchema, data => ({
         path: data.path,
@@ -437,9 +443,9 @@ export function createMemoryClient(config: MemoryClientConfig, options: MemoryV3
       assertAgentId(coreReadPath, agentId)
 
       return post(fetchImpl, config, secrets, timeoutMs, coreReadPath, {
-        team_id: config.teamId,
+        team_id: input.teamId ?? config.teamId,
         agent_id: agentId,
-        user_id: config.userId,
+        user_id: input.userId ?? config.userId,
       }, coreReadSchema, data => ({
         content: data.content,
         ...(data.version === undefined || data.version === null ? {} : { version: data.version }),
@@ -449,6 +455,24 @@ export function createMemoryClient(config: MemoryClientConfig, options: MemoryV3
         ...(data.updated_at ? { updatedAt: data.updated_at } : {}),
       }))
     },
+  }
+}
+
+/**
+ * Returns a client that sends one resolved team and user on every call.
+ * Agent id and session id stay on the call. Facts and chat pass the same agent id.
+ */
+export function bindMemoryScope(client: MemoryV3Client, scope: { teamId: string, userId: string }): MemoryV3Client {
+  const bound = { teamId: scope.teamId, userId: scope.userId }
+  return {
+    addConversation: input => client.addConversation({ ...input, ...bound }),
+    searchConversation: input => client.searchConversation({ ...input, ...bound }),
+    queryConversation: input => client.queryConversation({ ...input, ...bound }),
+    deleteConversation: input => client.deleteConversation({ ...input, ...bound }),
+    queryAtomic: input => client.queryAtomic({ ...input, ...bound }),
+    listScenarios: input => client.listScenarios({ ...input, ...bound }),
+    readScenario: input => client.readScenario({ ...input, ...bound }),
+    readCore: input => client.readCore({ ...input, ...bound }),
   }
 }
 

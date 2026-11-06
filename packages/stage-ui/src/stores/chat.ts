@@ -297,10 +297,19 @@ export const useChatStore = defineStore('chat', () => {
    * A recipe's own session adds the recipe's steps after the identity. They stay the same there, so its prefix stays cacheable.
    * The first request and every later model step read it, so a card edit reaches the next step.
    */
+  function memoryRequest(sessionId: string) {
+    const binding = chatSession.sessionMetas[sessionId]?.bindings?.[0]
+    return memory.requestForSession({
+      sessionId,
+      personaId: personaOf(sessionId),
+      ...(binding ? { binding } : {}),
+    })
+  }
+
   function sessionSystemPrompt(sessionId: string) {
     const persona = personaOf(sessionId)
     const identity = composeSystemPrompt(cardStore.getSystemPrompt(persona))
-      + (memory.enabled ? composeMemoryPrompt(memory.indexFor(persona)) : '')
+      + (memory.enabled ? composeMemoryPrompt(memory.indexFor(persona, memoryRequest(sessionId))) : '')
       + (drawsCards(sessionId) ? composeDrawCardPrompt() : '')
     const recipeId = chatSession.sessionMetas[sessionId]?.recipeId
     const recipe = recipeId ? recipes.recipes.find(entry => entry.id === recipeId) : undefined
@@ -641,9 +650,16 @@ export const useChatStore = defineStore('chat', () => {
     const { conversationId: sessionId } = correlation
     // Each character card keeps its own memories and reads the general ones. A scene's card keeps its own as well.
     const persona = personaOf(sessionId)
+    const memoryScope = memoryRequest(sessionId)
     const sourceTools = async () => [
       ...(typeof tools === 'function' ? await tools() ?? [] : tools ?? []),
-      ...memory.enabled ? await createMemoryTools({ read: id => memory.read(id, persona), write: entry => memory.write(entry, persona), forget: id => memory.forget(id, persona) }) : [],
+      ...memory.enabled
+        ? await createMemoryTools({
+            read: id => memory.read(id, persona, memoryScope),
+            write: entry => memory.write(entry, persona, memoryScope),
+            forget: id => memory.forget(id, persona, memoryScope),
+          })
+        : [],
     ]
     // A recipe's own session runs only that recipe. It cannot start recipes, save them, or choose silence.
     if (isTaskSession(sessionId))
@@ -1157,6 +1173,7 @@ export const useChatStore = defineStore('chat', () => {
   runtime.hooks.onChatTurnComplete(async (chat, context) => {
     try {
       const stored = chatSession.getSessionMessages(context.sessionId).find(item => item.id === context.turnId)
+      const binding = chatSession.sessionMetas[context.sessionId]?.bindings?.[0]
       captureCompletedChatTurn({
         message: stored ?? context.message,
         output: chat.output,
@@ -1165,6 +1182,7 @@ export const useChatStore = defineStore('chat', () => {
         turnId: context.turnId,
         personaId: personaOf(context.sessionId),
         systemPrompt: sessionSystemPrompt(context.sessionId),
+        ...(binding ? { binding } : {}),
         record: (input) => {
           memory.recordChatTurn(input)
         },
@@ -1363,6 +1381,7 @@ export const useChatStore = defineStore('chat', () => {
       if (!stepProvider)
         throw new Error(`Failed to resolve chat provider "${selection.provider}"`)
 
+      await memory.prepareScope(memoryRequest(payload.sessionId))
       return {
         model: selection.model,
         chatProvider: stepProvider,
