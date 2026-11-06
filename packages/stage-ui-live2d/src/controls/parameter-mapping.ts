@@ -46,8 +46,13 @@ export interface Live2DParameterBinding {
  */
 export type Live2DParameterMapping = Partial<Record<Live2DParameterChannel, readonly Live2DParameterBinding[]>>
 
-/** The source that selected the bindings for one channel. */
-export type Live2DParameterMappingLayer = 'card' | 'physics' | 'name' | 'default'
+/**
+ * The source that selected the bindings for one channel.
+ *
+ * `structural` means physics input groups or display names, including
+ * translated group names from the Cubism display info file.
+ */
+export type Live2DParameterMappingLayer = 'card' | 'structural' | 'name' | 'default'
 
 /** Bindings for one channel and the layer that selected them. */
 export interface Live2DResolvedParameterChannel {
@@ -61,17 +66,36 @@ export interface Live2DResolvedParameterRig {
   channels: Readonly<Record<Live2DParameterChannel, Live2DResolvedParameterChannel>>
 }
 
+/** Minimum and maximum of one Cubism parameter. */
+export interface Live2DParameterRange {
+  min: number
+  max: number
+}
+
+/** One parameter row from a Cubism display info file. */
+export interface Live2DParameterDescriptor {
+  id: string
+  /** Display name. It can be a translated name, for example Chinese. */
+  name: string
+  /** Group names from the display info file, parent first. */
+  group: string
+}
+
 /**
- * Parameter ids read from a loaded model and from its physics file.
+ * Parameter ids read from a loaded model and from its files.
  *
- * `parameterIds` comes from the runtime model. `physicsInputIds` comes from
- * physics3.json inputs. Those inputs are the parameters that drive hair,
+ * `parameterIds` comes from the runtime model. `physicsInputIds` and
+ * `physicsGroups` come from physics3.json inputs. Those inputs drive hair,
  * clothes, and body physics. Physics outputs are the driven parameters, so
- * they are not write targets.
+ * they are not write targets. `parameterDescriptors` come from cdi3.json.
  */
 export interface Live2DParameterCatalog {
   parameterIds: readonly string[]
   physicsInputIds: readonly string[]
+  /** Input ids that share one physics setting, in file order. */
+  physicsGroups?: readonly (readonly string[])[]
+  parameterRanges?: Readonly<Record<string, Live2DParameterRange>>
+  parameterDescriptors?: readonly Live2DParameterDescriptor[]
 }
 
 /** A value held on one channel while the settings test sweep runs. */
@@ -207,37 +231,220 @@ function sameAsDefault(channel: Live2DParameterChannel, bindings: readonly Live2
 }
 
 /**
- * Physics inputs that belong to this channel.
+ * Id stems for torso parameters that follow the body angle.
  *
- * When the model also has the standard id, both ids are returned. The standard
- * id keeps the current AIRI write. The physics id is the one that deforms the
- * body and drives physics.
+ * Chest and bust ids stay out. On bundled models such as Hiyori those names
+ * belong to secondary parts, not the follow skeleton.
  */
-function bindingsFromPhysics(
+const bodyIdPattern = /hip|waist|shoulder|bodyangle|torso/i
+/** Expression and limb ids that must not follow the head or the body. */
+const excludedIdPattern = /open|smile|squint|brow|tear|lash|highlight|leg|arm|hand|finger|hair|skirt|ear|ribbon/i
+const hairTextPattern = /头发|[髪发裙耳]|hair|skirt|ear/i
+const breathTextPattern = /呼吸|breath/i
+const mouthOpenTextPattern = /嘴张|张嘴|开口|mouth\s*open/i
+const mouthFormTextPattern = /嘴型|mouth\s*form/i
+const bodyTextPattern = /身体|身躯|胴体|[胴胯腰肩]|hip|shoulder|waist|torso/i
+/** Group words specific enough to classify a parameter the id did not name. */
+const specificGroupPattern = /[头頭胯腰肩]|呼吸|眼球/
+const eyeTextPattern = /眼球|eyeball/i
+const headTextPattern = /[头頭]|head/i
+
+function aliasChannel(id: string): Live2DParameterChannel | undefined {
+  for (const channel of live2dParameterChannels) {
+    if ((live2dParameterChannelAliases[channel] as readonly string[]).includes(id))
+      return channel
+  }
+  return undefined
+}
+
+function axisOf(id: string): 'x' | 'y' | 'z' | undefined {
+  const fromAngle = id.match(/angle[a-z]*?([xyz])/i)
+  if (fromAngle?.[1])
+    return fromAngle[1].toLowerCase() as 'x' | 'y' | 'z'
+  const trailing = id.match(/([xyz])(?=\d*$)/i)
+  if (trailing?.[1])
+    return trailing[1].toLowerCase() as 'x' | 'y' | 'z'
+  return undefined
+}
+
+function channelForFamily(family: 'head' | 'body' | 'eye' | 'mouthOpen' | 'mouthForm' | 'breath', axis: 'x' | 'y' | 'z' | undefined): Live2DParameterChannel | undefined {
+  if (family === 'breath')
+    return 'breath'
+  if (family === 'mouthOpen')
+    return 'mouthOpen'
+  if (family === 'mouthForm')
+    return 'mouthForm'
+  if (!axis)
+    return undefined
+  const suffix = axis.toUpperCase()
+  if (family === 'head')
+    return `headAngle${suffix}` as Live2DParameterChannel
+  if (family === 'body')
+    return `bodyAngle${suffix}` as Live2DParameterChannel
+  return `eyeBall${suffix}` as Live2DParameterChannel
+}
+
+function familyFromText(text: string): 'head' | 'body' | 'eye' | 'mouthOpen' | 'mouthForm' | 'breath' | undefined {
+  if (hairTextPattern.test(text))
+    return undefined
+  if (breathTextPattern.test(text))
+    return 'breath'
+  if (mouthOpenTextPattern.test(text))
+    return 'mouthOpen'
+  if (mouthFormTextPattern.test(text))
+    return 'mouthForm'
+  if (bodyTextPattern.test(text))
+    return 'body'
+  if (eyeTextPattern.test(text))
+    return 'eye'
+  if (headTextPattern.test(text))
+    return 'head'
+  return undefined
+}
+
+/**
+ * Classifies one id from its token or its display name.
+ *
+ * Plain aliases such as `AngleX` are not structural by themselves. They become
+ * structural only when physics lists them.
+ */
+function descriptorFamily(id: string, descriptor: Live2DParameterDescriptor): 'head' | 'body' | 'eye' | 'mouthOpen' | 'mouthForm' | 'breath' | undefined {
+  const own = `${id} ${descriptor.name}`
+  // Hair and clothes can sit in a head or body group. The name wins.
+  if (hairTextPattern.test(own))
+    return undefined
+  const fromName = familyFromText(own)
+  if (fromName)
+    return fromName
+  if (specificGroupPattern.test(descriptor.group))
+    return familyFromText(descriptor.group)
+  return undefined
+}
+
+function structuralChannel(id: string, descriptor: Live2DParameterDescriptor | undefined): Live2DParameterChannel | undefined {
+  const axis = axisOf(id)
+  if (bodyIdPattern.test(id) && axis)
+    return channelForFamily('body', axis)
+  if (descriptor) {
+    const family = descriptorFamily(id, descriptor)
+    const fromText = family ? channelForFamily(family, axis) : undefined
+    if (fromText)
+      return fromText
+  }
+  if (excludedIdPattern.test(id))
+    return undefined
+  if (/eyeball/i.test(id) && axis)
+    return channelForFamily('eye', axis)
+  if (/breath/i.test(id))
+    return 'breath'
+  if (/mouthopen/i.test(id))
+    return 'mouthOpen'
+  if (/mouthform/i.test(id))
+    return 'mouthForm'
+  return undefined
+}
+
+function isPoseCompanion(id: string, channel: Live2DParameterChannel, descriptor: Live2DParameterDescriptor | undefined): boolean {
+  const owned = structuralChannel(id, descriptor) ?? aliasChannel(id)
+  if (owned)
+    return owned === channel
+  if (excludedIdPattern.test(id))
+    return false
+  if (!/angle|rotation|角度/i.test(id))
+    return false
+  const axis = axisOf(id)
+  return axis !== undefined && channel.endsWith(axis.toUpperCase())
+}
+
+function listedOnModel(id: string, known: ReadonlySet<string>): boolean {
+  return known.size === 0 || known.has(id)
+}
+
+function roundScale(value: number): number {
+  return Math.round(value * 1000) / 1000
+}
+
+function scaleFor(id: string, channel: Live2DParameterChannel, catalog: Live2DParameterCatalog): number | undefined {
+  const ranges = catalog.parameterRanges
+  if (!ranges)
+    return undefined
+  const target = ranges[id]
+  const standard = ranges[standardParameterId(channel)]
+  if (!target || !standard)
+    return undefined
+  const standardSpan = standard.max - standard.min
+  const targetSpan = target.max - target.min
+  if (!(standardSpan > 0) || !(targetSpan > 0))
+    return undefined
+  const scale = targetSpan / standardSpan
+  if (Math.abs(scale - 1) < 0.02)
+    return undefined
+  return roundScale(scale)
+}
+
+function bindingFor(
+  id: string,
+  channel: Live2DParameterChannel,
+  catalog: Live2DParameterCatalog,
+  standard: boolean,
+): Live2DParameterBinding {
+  if (standard)
+    return { paramId: id }
+  const scale = scaleFor(id, channel, catalog)
+  return scale === undefined ? { paramId: id } : { paramId: id, scale }
+}
+
+/**
+ * Parameters that move with one channel, from physics groups and display names.
+ *
+ * A physics input that matches the channel brings the other pose inputs in
+ * that physics setting. Hip, shoulder, and body ids join the body channel.
+ * Display names do the same, including translated group names. The standard
+ * id stays first. A result that is only that id is not structural.
+ */
+function bindingsFromStructure(
   channel: Live2DParameterChannel,
   catalog: Live2DParameterCatalog,
 ): readonly Live2DParameterBinding[] | undefined {
-  const aliases = new Set<string>(live2dParameterChannelAliases[channel])
-  const matched = catalog.physicsInputIds.filter(id => aliases.has(id))
-  if (matched.length === 0)
-    return undefined
-
-  const known = new Set(catalog.parameterIds)
-  const knowsParameters = known.size > 0
-  const standardId = standardParameterId(channel)
   const ids: string[] = []
-  // An empty parameter list means the runtime ids were not readable. Keep the
-  // standard id so a normal model still receives the pose.
-  if (!knowsParameters || known.has(standardId))
-    ids.push(standardId)
-  for (const id of matched) {
+  const add = (id: string) => {
     if (!ids.includes(id))
       ids.push(id)
   }
+  const known = new Set(catalog.parameterIds)
+  const descriptors = new Map((catalog.parameterDescriptors ?? []).map(descriptor => [descriptor.id, descriptor]))
+  const standardId = standardParameterId(channel)
+  if (listedOnModel(standardId, known))
+    add(standardId)
 
-  const bindings = ids.map(paramId => ({ paramId }))
-  // Physics that names only the standard id is the normal Cubism rig.
-  if (sameAsDefault(channel, bindings))
+  for (const id of catalog.physicsInputIds) {
+    if (!listedOnModel(id, known))
+      continue
+    const descriptor = descriptors.get(id)
+    if (aliasChannel(id) === channel || structuralChannel(id, descriptor) === channel)
+      add(id)
+  }
+
+  for (const id of catalog.parameterIds) {
+    if (structuralChannel(id, descriptors.get(id)) === channel)
+      add(id)
+  }
+
+  for (const group of catalog.physicsGroups ?? []) {
+    const anchored = group.some((id) => {
+      const descriptor = descriptors.get(id)
+      return aliasChannel(id) === channel || structuralChannel(id, descriptor) === channel
+    })
+    if (!anchored)
+      continue
+    for (const id of group) {
+      if (listedOnModel(id, known) && isPoseCompanion(id, channel, descriptors.get(id)))
+        add(id)
+    }
+  }
+
+  const bindings = ids.map(id => bindingFor(id, channel, catalog, id === standardId))
+  if (bindings.length === 0 || sameAsDefault(channel, bindings))
     return undefined
   return bindings
 }
@@ -271,10 +478,10 @@ function resolveChannel(
   if (cardBindings)
     return { channel, bindings: cardBindings, layer: 'card' }
 
-  // Layer 2. Physics inputs name the parameters that move the rig.
-  const physicsBindings = bindingsFromPhysics(channel, catalog)
-  if (physicsBindings)
-    return { channel, bindings: physicsBindings, layer: 'physics' }
+  // Layer 2. Physics groups and display names name the parameters that move.
+  const structuralBindings = bindingsFromStructure(channel, catalog)
+  if (structuralBindings)
+    return { channel, bindings: structuralBindings, layer: 'structural' }
 
   // Layer 3. A known alias is used only when the standard id is absent.
   const nameBindings = bindingsFromName(channel, catalog)
@@ -288,15 +495,15 @@ function resolveChannel(
 /**
  * Resolves one rig from a card mapping and a model catalog.
  *
- * Priority for each channel is card, then physics inputs, then a parameter
- * name, then the standard Cubism id.
+ * Priority for each channel is card, then physics groups and display names,
+ * then a parameter name, then the standard Cubism id.
  *
  * @example
  * resolveLive2DParameterRig(undefined, {
  *   parameterIds: ['ParamAngleX', 'AngleX'],
  *   physicsInputIds: ['AngleX'],
  * }).channels.headAngleX
- * // => bindings for ParamAngleX and AngleX, layer 'physics'
+ * // => bindings for ParamAngleX and AngleX, layer 'structural'
  */
 export function resolveLive2DParameterRig(
   cardMapping: Live2DParameterMapping | undefined,
@@ -470,6 +677,26 @@ function sourceParameterId(value: unknown): string | undefined {
   return typeof source.Id === 'string' && source.Id.length > 0 ? source.Id : undefined
 }
 
+function physicsInputGroups(physics: unknown): string[][] {
+  if (!isRecord(physics) || !Array.isArray(physics.PhysicsSettings))
+    return []
+
+  const groups: string[][] = []
+  for (const setting of physics.PhysicsSettings) {
+    if (!isRecord(setting) || !Array.isArray(setting.Input))
+      continue
+    const ids: string[] = []
+    for (const input of setting.Input) {
+      const id = sourceParameterId(input)
+      if (id && !ids.includes(id))
+        ids.push(id)
+    }
+    if (ids.length > 0)
+      groups.push(ids)
+  }
+  return groups
+}
+
 /**
  * Reads physics input parameter ids.
  *
@@ -482,20 +709,99 @@ function sourceParameterId(value: unknown): string | undefined {
  * // => ['AngleX']
  */
 export function readLive2DPhysicsInputIds(physics: unknown): string[] {
-  if (!isRecord(physics) || !Array.isArray(physics.PhysicsSettings))
-    return []
-
   const ids: string[] = []
-  for (const setting of physics.PhysicsSettings) {
-    if (!isRecord(setting) || !Array.isArray(setting.Input))
-      continue
-    for (const input of setting.Input) {
-      const id = sourceParameterId(input)
-      if (id && !ids.includes(id))
+  for (const group of physicsInputGroups(physics)) {
+    for (const id of group) {
+      if (!ids.includes(id))
         ids.push(id)
     }
   }
   return ids
+}
+
+/** Input ids that share one physics setting, in file order. */
+export function readLive2DPhysicsInputGroups(physics: unknown): string[][] {
+  return physicsInputGroups(physics)
+}
+
+function groupLabel(groups: ReadonlyMap<string, { name: string, parent: string }>, id: string): string {
+  const names: string[] = []
+  let current = id
+  const seen = new Set<string>()
+  while (current && !seen.has(current)) {
+    seen.add(current)
+    const group = groups.get(current)
+    if (!group)
+      break
+    if (group.name)
+      names.push(group.name)
+    current = group.parent
+  }
+  return names.join(' ')
+}
+
+/**
+ * Reads parameter display names from a Cubism display info file.
+ *
+ * @example
+ * readLive2DParameterDescriptors({
+ *   Parameters: [{ Id: 'HipAngleX', Name: '胯 X', GroupId: 'body' }],
+ *   ParameterGroups: [{ Id: 'body', Name: '身体', GroupId: '' }],
+ * })
+ * // => [{ id: 'HipAngleX', name: '胯 X', group: '身体' }]
+ */
+export function readLive2DParameterDescriptors(cdi: unknown): Live2DParameterDescriptor[] {
+  if (!isRecord(cdi) || !Array.isArray(cdi.Parameters))
+    return []
+
+  const groups = new Map<string, { name: string, parent: string }>()
+  if (Array.isArray(cdi.ParameterGroups)) {
+    for (const group of cdi.ParameterGroups) {
+      if (!isRecord(group) || typeof group.Id !== 'string')
+        continue
+      groups.set(group.Id, {
+        name: typeof group.Name === 'string' ? group.Name : '',
+        parent: typeof group.GroupId === 'string' ? group.GroupId : '',
+      })
+    }
+  }
+
+  const descriptors: Live2DParameterDescriptor[] = []
+  for (const parameter of cdi.Parameters) {
+    if (!isRecord(parameter) || typeof parameter.Id !== 'string')
+      continue
+    descriptors.push({
+      id: parameter.Id,
+      name: typeof parameter.Name === 'string' ? parameter.Name : '',
+      group: groupLabel(groups, typeof parameter.GroupId === 'string' ? parameter.GroupId : ''),
+    })
+  }
+  return descriptors
+}
+
+/** Reads min and max next to each parameter id. A missing range is omitted. */
+export function readLive2DCoreParameterRanges(coreModel: object): Record<string, Live2DParameterRange> {
+  const model = coreModel as {
+    _parameterMinimumValues?: ArrayLike<number>
+    _parameterMaximumValues?: ArrayLike<number>
+    getParameterMinimumValue?: (index: number) => number
+    getParameterMaximumValue?: (index: number) => number
+  }
+  const ranges: Record<string, Live2DParameterRange> = {}
+  for (const [index, id] of readLive2DCoreParameterIds(coreModel).entries()) {
+    const min = model._parameterMinimumValues?.[index] ?? model.getParameterMinimumValue?.(index)
+    const max = model._parameterMaximumValues?.[index] ?? model.getParameterMaximumValue?.(index)
+    if (typeof min !== 'number' || typeof max !== 'number' || !Number.isFinite(min) || !Number.isFinite(max) || !(max > min))
+      continue
+    ranges[id] = { min, max }
+  }
+  return ranges
+}
+
+/** Physics inputs already read from a model archive. */
+export interface Live2DPhysicsEvidence {
+  inputIds: readonly string[]
+  groups: readonly (readonly string[])[]
 }
 
 /** Settings fields used to locate a physics file after a model loads. */
@@ -504,31 +810,52 @@ export interface Live2DPhysicsSettingsSource {
   resolveURL?: (path: string) => string
   /** Input ids already read from the archive. */
   _physicsInputIds?: readonly string[]
+  /** Input groups already read from the archive. */
+  _physicsGroups?: readonly (readonly string[])[]
+  /** Display info already read from the archive. */
+  _cdiData?: unknown
 }
 
+const emptyPhysicsEvidence: Live2DPhysicsEvidence = Object.freeze({
+  inputIds: Object.freeze([]),
+  groups: Object.freeze([]),
+})
+
 /**
- * Reads physics input ids from archive metadata or from the physics file URL.
+ * Reads physics inputs from archive metadata or from the physics file URL.
  *
- * A missing file returns an empty list. Detection then uses the name layer.
+ * A missing file returns an empty list. Detection then uses display names
+ * and the name layer.
  */
-export async function loadLive2DPhysicsInputIds(settings?: Live2DPhysicsSettingsSource): Promise<readonly string[]> {
+export async function loadLive2DPhysicsEvidence(settings?: Live2DPhysicsSettingsSource): Promise<Live2DPhysicsEvidence> {
   if (!settings)
-    return []
+    return emptyPhysicsEvidence
+  if (settings._physicsGroups) {
+    const groups = settings._physicsGroups.map(group => [...group])
+    const inputIds = settings._physicsInputIds
+      ? [...settings._physicsInputIds]
+      : readLive2DPhysicsInputIds({ PhysicsSettings: groups.map(group => ({ Input: group.map(id => ({ Source: { Id: id } })) })) })
+    return { inputIds, groups }
+  }
   if (settings._physicsInputIds)
-    return settings._physicsInputIds
+    return { inputIds: [...settings._physicsInputIds], groups: settings._physicsInputIds.map(id => [id]) }
   if (!settings.physics)
-    return []
+    return emptyPhysicsEvidence
 
   const url = settings.resolveURL?.(settings.physics) ?? settings.physics
   try {
     const response = await fetch(url)
     if (!response.ok)
-      return []
-    return readLive2DPhysicsInputIds(await response.json())
+      return emptyPhysicsEvidence
+    const physics: unknown = await response.json()
+    return {
+      inputIds: readLive2DPhysicsInputIds(physics),
+      groups: readLive2DPhysicsInputGroups(physics),
+    }
   }
   catch (error) {
     console.warn('[Live2D] Physics inputs were not read.', error)
-    return []
+    return emptyPhysicsEvidence
   }
 }
 

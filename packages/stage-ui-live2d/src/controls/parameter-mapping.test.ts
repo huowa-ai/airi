@@ -114,7 +114,7 @@ describe('live2d parameter rig layers', () => {
       bindings: [{ paramId: 'AngleX' }],
       layer: 'card',
     })
-    expect(rig.channels.headAngleY.layer).toBe('physics')
+    expect(rig.channels.headAngleY.layer).toBe('structural')
     expect(rig.channels.headAngleY.bindings.map(binding => binding.paramId)).toEqual(['ParamAngleY', 'AngleY'])
   })
 
@@ -126,7 +126,7 @@ describe('live2d parameter rig layers', () => {
     })
 
     expect(physicsInputIds).toEqual(['AngleX', 'AngleY', 'AngleZ'])
-    expect(rig.channels.headAngleX.layer).toBe('physics')
+    expect(rig.channels.headAngleX.layer).toBe('structural')
     expect(rig.channels.headAngleX.bindings).toEqual([
       { paramId: 'ParamAngleX' },
       { paramId: 'AngleX' },
@@ -173,7 +173,7 @@ describe('live2d parameter rig layers', () => {
       physicsInputIds: ['PARAM_ANGLE_X'],
     })
 
-    expect(rig.channels.headAngleX.layer).toBe('physics')
+    expect(rig.channels.headAngleX.layer).toBe('structural')
     expect(rig.channels.headAngleX.bindings).toEqual([{ paramId: 'PARAM_ANGLE_X' }])
   })
 
@@ -186,6 +186,120 @@ describe('live2d parameter rig layers', () => {
     expect(ids).toEqual(['ParamAngleX', 'AngleX', 'ParamBodyAngleX'])
     expect(readLive2DCoreParameterIds({ _parameterIds: ['ParamAngleX', 'AngleX'] })).toEqual(['ParamAngleX', 'AngleX'])
     expect(readLive2DCoreParameterIds({})).toEqual([])
+  })
+
+  it('fans body follow out to hip and shoulder parameters from physics groups and display names', () => {
+    const rig = resolveLive2DParameterRig(undefined, {
+      parameterIds: [
+        'ParamAngleX',
+        'AngleX',
+        'ParamBodyAngleX',
+        'ParamBodyAngleY',
+        'ParamBodyAngleZ',
+        'HipAngleX',
+        'HipAngleY',
+        'ParamBodyAngleRX',
+        'PoseAngleX',
+        'ShoulderX',
+        'ShoulderZ',
+        'HipAngleZ',
+        'ParamHairFront',
+        'ParamEyeLOpen',
+        'ParamBustX',
+      ],
+      physicsInputIds: ['AngleX', 'ParamAngleX', 'ParamBodyAngleX', 'HipAngleX', 'ParamBodyAngleRX', 'PoseAngleX', 'ParamBodyAngleY', 'HipAngleY', 'ParamEyeLOpen'],
+      physicsGroups: [
+        ['AngleX', 'ParamAngleX', 'ParamEyeLOpen'],
+        ['ParamBodyAngleX', 'HipAngleX', 'ParamBodyAngleRX', 'PoseAngleX'],
+        ['ParamBodyAngleY', 'HipAngleY'],
+      ],
+      parameterRanges: {
+        ParamBodyAngleX: { min: -30, max: 30 },
+        HipAngleX: { min: -30, max: 30 },
+        ShoulderX: { min: -10, max: 10 },
+      },
+      parameterDescriptors: [
+        { id: 'ShoulderX', name: '肩 X', group: '身体' },
+        { id: 'HipAngleZ', name: '胯 Z', group: '身体' },
+        { id: 'ParamHairFront', name: '头发', group: '头' },
+        { id: 'ParamBustX', name: '胸部', group: '身体' },
+      ],
+    })
+
+    expect(rig.channels.bodyAngleX.layer).toBe('structural')
+    expect(rig.channels.bodyAngleX.bindings).toEqual([
+      { paramId: 'ParamBodyAngleX' },
+      { paramId: 'HipAngleX' },
+      { paramId: 'ParamBodyAngleRX' },
+      { paramId: 'ShoulderX', scale: 0.333 },
+      { paramId: 'PoseAngleX' },
+    ])
+    expect(rig.channels.bodyAngleY.bindings.map(binding => binding.paramId)).toEqual(['ParamBodyAngleY', 'HipAngleY'])
+    expect(rig.channels.bodyAngleZ.bindings.map(binding => binding.paramId)).toEqual(['ParamBodyAngleZ', 'ShoulderZ', 'HipAngleZ'])
+    expect(rig.channels.headAngleX.bindings.map(binding => binding.paramId)).toEqual(['ParamAngleX', 'AngleX'])
+    expect(rig.channels.headAngleX.bindings.some(binding => binding.paramId === 'ParamEyeLOpen')).toBe(false)
+    expect(rig.channels.headAngleX.bindings.some(binding => binding.paramId === 'ParamHairFront')).toBe(false)
+    expect(rig.channels.bodyAngleX.bindings.some(binding => binding.paramId === 'ParamBustX')).toBe(false)
+  })
+
+  it('keeps a bundled model on the standard ids', () => {
+    const rig = resolveLive2DParameterRig(undefined, {
+      parameterIds: [
+        'ParamAngleX',
+        'ParamAngleY',
+        'ParamAngleZ',
+        'ParamBodyAngleX',
+        'ParamBodyAngleY',
+        'ParamBodyAngleZ',
+        'ParamEyeBallX',
+        'ParamEyeBallY',
+        'ParamMouthOpenY',
+        'ParamMouthForm',
+        'ParamBreath',
+        'ParamHairFront',
+        'ParamBustX',
+      ],
+      physicsInputIds: ['ParamAngleX', 'ParamAngleY', 'ParamAngleZ', 'ParamBodyAngleX', 'ParamEyeBallX', 'ParamEyeBallY'],
+      physicsGroups: [
+        ['ParamAngleX'],
+        ['ParamAngleY'],
+        ['ParamAngleZ'],
+        ['ParamBodyAngleX'],
+        ['ParamEyeBallX', 'ParamEyeBallY'],
+      ],
+      parameterDescriptors: [
+        { id: 'ParamAngleX', name: '角度 X', group: '头' },
+        { id: 'ParamBodyAngleX', name: '身体 X', group: '身体' },
+        { id: 'ParamHairFront', name: '头发', group: '头' },
+        { id: 'ParamBustX', name: '胸部', group: '身体' },
+        { id: 'ParamBreath', name: '呼吸', group: '身体' },
+      ],
+    })
+
+    expect(rig.channels.headAngleX.layer).toBe('default')
+    expect(rig.channels.headAngleX.bindings).toEqual([{ paramId: 'ParamAngleX' }])
+    expect(rig.channels.bodyAngleX.layer).toBe('default')
+    expect(rig.channels.bodyAngleX.bindings).toEqual([{ paramId: 'ParamBodyAngleX' }])
+    expect(rig.channels.eyeBallX.layer).toBe('default')
+    expect(rig.channels.breath.layer).toBe('default')
+    expect(rig.channels.breath.bindings).toEqual([{ paramId: 'ParamBreath' }])
+  })
+
+  it('lets a card body mapping replace the structural fan-out', () => {
+    const rig = resolveLive2DParameterRig(
+      { bodyAngleX: [{ paramId: 'HipAngleX' }] },
+      {
+        parameterIds: ['ParamBodyAngleX', 'HipAngleX'],
+        physicsInputIds: ['ParamBodyAngleX', 'HipAngleX'],
+        physicsGroups: [['ParamBodyAngleX', 'HipAngleX']],
+      },
+    )
+
+    expect(rig.channels.bodyAngleX).toEqual({
+      channel: 'bodyAngleX',
+      bindings: [{ paramId: 'HipAngleX' }],
+      layer: 'card',
+    })
   })
 })
 

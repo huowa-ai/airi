@@ -247,10 +247,10 @@ live2d:
     reset-parameters: 重置为默认参数
     mapping:
       title: 参数映射
-      description: AIRI 写入这些通道。角色卡映射优先。其次是物理输入。参数名是最后的来源。
+      description: AIRI 写入这些通道。角色卡映射优先。其次是模型结构。参数名是最后的来源。
       layer:
         card: 角色卡
-        physics: 物理
+        structural: 结构
         name: 参数名
         default: 默认
       columns:

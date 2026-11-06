@@ -61,8 +61,10 @@ import {
   emptyLive2DParameterCatalog,
   forEachLoadedLive2DMotion,
   installLive2DFocusMapping,
-  loadLive2DPhysicsInputIds,
+  loadLive2DPhysicsEvidence,
   readLive2DCoreParameterIds,
+  readLive2DCoreParameterRanges,
+  readLive2DParameterDescriptors,
   reportUnloadedLive2DMotion,
   resolveLive2DParameterRig,
   writeLive2DParameter,
@@ -424,11 +426,15 @@ async function performModelLoad() {
     const motionManager = internalModel.motionManager
     disableLive2DSdkBreath(internalModel)
     const physicsSettings = internalModel.settings as Live2DPhysicsSettingsSource | undefined
+    const physics = await loadLive2DPhysicsEvidence(physicsSettings)
     parameterCatalog.value = {
       parameterIds: readLive2DCoreParameterIds(coreModel),
-      physicsInputIds: await loadLive2DPhysicsInputIds(physicsSettings),
+      physicsInputIds: physics.inputIds,
+      physicsGroups: physics.groups,
+      parameterRanges: readLive2DCoreParameterRanges(coreModel),
+      parameterDescriptors: readLive2DParameterDescriptors(physicsSettings?._cdiData),
     }
-    parameterRigStore.publishCatalog(parameterCatalog.value)
+    parameterRigStore.publishCatalog(parameterCatalog.value, props.modelId ?? '')
     installLive2DFocusMapping(internalModel, () => resolvedRig.value, () => parameterRigStore.probe)
     writeMappedParameter('mouthOpen', mouthOpenSize.value)
 

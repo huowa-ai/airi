@@ -5,7 +5,7 @@ import JSZip from 'jszip'
 import { Cubism4ModelSettings, FileLoader, Live2DFactory, ZipLoader } from 'pixi-live2d-display/cubism4'
 
 import { resolveLive2DModelControls } from '../controls/manifest'
-import { readLive2DPhysicsInputIds } from '../controls/parameter-mapping'
+import { readLive2DPhysicsInputGroups, readLive2DPhysicsInputIds } from '../controls/parameter-mapping'
 import { decodeZipFileName } from './decode-zip-filename'
 
 // Legacy/VTube-Studio archives often store entry names without the UTF-8 flag in a legacy
@@ -48,6 +48,7 @@ ZipLoader.createSettings = async (reader: JSZip) => {
       _cdiData?: unknown
       _expFiles?: Array<{ name: string, fileName: string, data: unknown }>
       _physicsInputIds?: string[]
+      _physicsGroups?: string[][]
       physics?: string
     }
 
@@ -55,8 +56,9 @@ ZipLoader.createSettings = async (reader: JSZip) => {
     if (physicsPath) {
       const physicsFile = filePaths.find(path => path === physicsPath || path.endsWith(`/${physicsPath}`))
       if (physicsFile) {
-        const physicsText = await reader.file(physicsFile)!.async('text')
-        metadataSettings._physicsInputIds = readLive2DPhysicsInputIds(JSON.parse(physicsText))
+        const physicsJson: unknown = JSON.parse(await reader.file(physicsFile)!.async('text'))
+        metadataSettings._physicsInputIds = readLive2DPhysicsInputIds(physicsJson)
+        metadataSettings._physicsGroups = readLive2DPhysicsInputGroups(physicsJson)
       }
     }
 

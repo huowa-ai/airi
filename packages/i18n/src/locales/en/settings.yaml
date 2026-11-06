@@ -279,10 +279,10 @@ live2d:
     reset-parameters: Reset to default parameters
     mapping:
       title: Parameter mapping
-      description: AIRI writes these channels. A card mapping wins. Physics inputs come next. A parameter name is the last source.
+      description: AIRI writes these channels. A card mapping wins. Model structure comes next. A parameter name is the last source.
       layer:
         card: Card
-        physics: Physics
+        structural: Structure
         name: Name
         default: Default
       columns:

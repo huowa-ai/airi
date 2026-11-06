@@ -31,7 +31,7 @@ const channelLabel = computed<Record<Live2DParameterChannel, string>>(() => ({
 
 const layerLabel = computed<Record<Live2DParameterMappingLayer, string>>(() => ({
   card: t('settings.live2d.parameters.mapping.layer.card'),
-  physics: t('settings.live2d.parameters.mapping.layer.physics'),
+  structural: t('settings.live2d.parameters.mapping.layer.structural'),
   name: t('settings.live2d.parameters.mapping.layer.name'),
   default: t('settings.live2d.parameters.mapping.layer.default'),
 }))
