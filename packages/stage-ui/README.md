@@ -24,6 +24,7 @@ Cloud decides whether each granted Cloud flag allows account opt-in or uses dire
 Missing Cloud grants disable Cloud features. Refresh failures and account changes clear grants, not local choices.
 `useCloudFetch()` in `composables/cloud.ts` shares the Cloud origin and authenticated fetch boundary. The store reads `GET /v1/feature-flags`.
 Set `VITE_CLOUD_URL` for a custom Cloud origin. Deploy its migration and API before the client.
+Set `VITE_SERVER_URL` for a custom API origin. Development uses `http://127.0.0.1:6112` when it is unset. Production uses `https://api.airi.build`.
 Keep authorization checks on the server.
 
 ## Notifications

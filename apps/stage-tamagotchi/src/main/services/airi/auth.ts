@@ -6,6 +6,7 @@ import type { ElectronAuthStatus } from '../../../shared/eventa'
 import { useLogg } from '@guiiai/logg'
 import { defineInvokeHandler } from '@moeru/eventa'
 import { errorMessageFrom } from '@moeru/std'
+import { resolveServerUrl } from '@proj-airi/stage-shared'
 import {
   generateCodeChallenge,
   generateCodeVerifier,
@@ -31,7 +32,7 @@ type MainContext = ReturnType<typeof createContext>['context']
 // OIDC configuration for the Electron client.
 const OIDC_CLIENT_ID = import.meta.env.VITE_OIDC_CLIENT_ID || 'airi-stage-electron'
 const OIDC_SCOPES = 'openid profile email offline_access'
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'https://api.airi.build'
+const SERVER_URL = resolveServerUrl(import.meta.env)
 const OIDC_AUTHORIZE_PATH = '/api/auth/oauth2/authorize'
 const OIDC_TOKEN_PATH = '/api/auth/oauth2/token'
 
