@@ -2,12 +2,13 @@ import type { MemoryV3Client } from '../src/memory-client'
 
 import { describe, expect, it } from 'vitest'
 
-import { createRemoteMemoryStorage, factSessionId } from '../src/remote-memory'
+import { createRemoteMemoryStorage, factAgentId, factSessionId } from '../src/remote-memory'
 
 interface Row {
   id: string
   agentId: string
   sessionId: string
+  role: 'user' | 'assistant'
   content: string
 }
 
@@ -25,6 +26,7 @@ function gateway(): MemoryV3Client & { rows: Row[] } {
           id,
           agentId: input.agentId ?? '',
           sessionId: input.sessionId,
+          role: message.role,
           content: message.content,
         })
         return id
@@ -96,10 +98,13 @@ describe('remote memory storage', () => {
 
     expect(saved).toMatchObject({ outcome: 'saved', entry: { description: 'Name', body: 'Ada likes tea', persona: 'card-1' } })
     expect(entries.map(entry => entry.persona)).toEqual(['card-1'])
-    expect(client.rows.some(row => row.agentId === 'card-2' && row.sessionId === factSessionId)).toBe(false)
-    const otherCard = await client.queryConversation({ agentId: 'card-2', sessionId: factSessionId })
+    const factRows = client.rows.filter(row => row.sessionId === factSessionId)
+    expect(factRows.map(row => row.agentId)).toEqual([factAgentId('card-1')])
+    expect(factRows.every(row => row.role === 'assistant')).toBe(true)
+    expect(client.rows.some(row => row.agentId === 'card-1' && row.sessionId === factSessionId)).toBe(false)
+    const otherCard = await client.queryConversation({ agentId: factAgentId('card-2'), sessionId: factSessionId })
     expect(otherCard.messages).toEqual([])
-    const found = await client.searchConversation({ query: 'tea', agentId: 'card-1', sessionId: factSessionId })
+    const found = await client.searchConversation({ query: 'tea', agentId: factAgentId('card-1'), sessionId: factSessionId })
     expect(found.messages).toHaveLength(1)
   })
 

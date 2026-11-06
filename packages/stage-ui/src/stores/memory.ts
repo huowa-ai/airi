@@ -1,10 +1,10 @@
-import type { MemoryStorage, MemoryV3Client } from '@proj-airi/tencentdb-memory'
+import type { ChatTurnInput, MemoryStorage, MemoryV3Client } from '@proj-airi/tencentdb-memory'
 
 import type { MemoryEntry, MemoryWrite } from '../types/memory'
 
 import { errorMessageFrom } from '@moeru/std'
 import { useLocalStorageManualReset } from '@proj-airi/stage-shared/composables'
-import { createMemoryClient, createRemoteMemoryStorage, GENERAL_AGENT_ID, memoryClientEnv, readMemoryClientConfig, readMemoryLayers } from '@proj-airi/tencentdb-memory'
+import { createChatTurnQueue, createMemoryClient, createRemoteMemoryStorage, GENERAL_AGENT_ID, memoryClientEnv, readMemoryClientConfig, readMemoryLayers } from '@proj-airi/tencentdb-memory'
 import { useBroadcastChannel } from '@vueuse/core'
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
@@ -48,6 +48,11 @@ export const useMemoryStore = defineStore('memory', () => {
   let remote: MemoryStorage | undefined
   let memoryClient: MemoryV3Client | undefined
   let serviceGeneration = 0
+  const chatTurns = createChatTurnQueue({
+    onError: (error) => {
+      console.warn('[memory] Chat turn was not stored.', errorMessageFrom(error) ?? '')
+    },
+  })
 
   function clearLiveEntries() {
     entries.value = NO_ENTRIES
@@ -233,6 +238,21 @@ export const useMemoryStore = defineStore('memory', () => {
     }
   }
 
+  /**
+   * Queues one finished chat turn as L0 on the chat agent.
+   * The call returns before MemoryCore answers. A write failure does not change the fact list.
+   * Nothing is queued when memory is off or the service client is missing.
+   */
+  function recordChatTurn(input: Omit<ChatTurnInput, 'agentId'> & { personaId: string }) {
+    const client = memoryClient
+    if (!enabled.value || !client)
+      return false
+    return chatTurns.enqueue(client, {
+      ...input,
+      agentId: input.personaId || GENERAL_AGENT_ID,
+    })
+  }
+
   /** Forgets an entry of the card by its id. General memories belong to the owner, so a run cannot forget them. */
   async function forget(id: string, personaId: string) {
     if (!remote)
@@ -294,6 +314,7 @@ export const useMemoryStore = defineStore('memory', () => {
     indexFor,
     read,
     write,
+    recordChatTurn,
     makeGeneral,
     forget,
     remove,

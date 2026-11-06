@@ -1,3 +1,5 @@
+export { createChatTurnQueue, decideChatTurn, sanitizeTurnText } from './chat-turn'
+export type { ChatTurnDecision, ChatTurnInput, ChatTurnQueue, ChatTurnSkipReason } from './chat-turn'
 export {
   defaultMemoryApiKey,
   defaultMemoryServiceId,
@@ -60,4 +62,4 @@ export type {
   MemoryStorage,
   MemoryWrite,
 } from './memory-storage'
-export { createRemoteMemoryStorage, factSessionId } from './remote-memory'
+export { createRemoteMemoryStorage, factAgentId, factSessionId } from './remote-memory'

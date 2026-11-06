@@ -204,7 +204,13 @@ The settings page can turn the memory service on. When the service is on, the ch
 
 The page calls MemoryCore over HTTP. The address, the team id, the user id, the service id, and the optional API key are device settings. The key is not in the source bundle. A later channel RPC can move the key off the page. That move is still open.
 
-Facts are L0 messages in session `airi:facts`. The agent id is the card id, or `airi:general`. The message body is a JSON fact. L1 extraction is a separate gateway pipeline. The graph reads the rows that pipeline stored. It does not start that pipeline.
+A finished chat turn is L0 on the chat agent. The stage uses `onChatTurnComplete`. It does not listen for `input:text`. A failed or interrupted turn writes nothing. The write is queued, so a gateway error does not block the chat.
+
+Manual facts are not L0 on the chat agent. The reviewed `feat/server_team` catalog has no atomic create route. `POST /v3/atomic/update` returns 404 when the id is new. The fact agent is `<card id>:facts`, or `airi:general:facts`. The session is still `airi:facts`. The message role is `assistant`. That role does not start L1 extraction, because the gateway notifies the pipeline only for a user message. Chat extraction therefore does not read the stored fact again.
+
+The graph still reads L1, L2, and L3 on the chat agent. A character enters that list when a manual fact records the card. A chat-only card is not added there yet.
+
+Per-user team ids stay out of this change. The write uses the current team id and the current user id.
 
 ## Unresolved
 

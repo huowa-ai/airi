@@ -8,9 +8,10 @@ MemoryCore is the intended fact store. `useMemoryStore` stays the writer that to
 
 - A channel client that connects to `ws://localhost:6121/ws` and announces `tencentdb-memory`.
 - A `MemoryStorage` port and an in-process fake. Two callers can share one record map.
-- A MemoryCore v3 client for L0 conversation calls, and for L1, L2, and L3 reads. The graph reads those layers. This package does not write them.
+- A MemoryCore v3 client for L0 conversation calls, and for L1, L2, and L3 reads. The graph reads those layers. This package does not write L1, L2, or L3.
+- A chat-turn queue. A finished turn is L0 on the chat agent. Manual facts use a different agent, `<card id>:facts`.
 
-The module does not listen for `input:text`. Startup does not call MemoryCore.
+The module does not listen for `input:text`. The stage chat store calls `onChatTurnComplete` and queues the L0 write. Startup does not call MemoryCore.
 
 ## Run the module
 
@@ -46,6 +47,14 @@ pnpm -F @proj-airi/tencentdb-memory smoke:l0
 The settings page calls the gateway from the browser. Set `server.corsOrigins` to the page origin. Allow the headers `Content-Type`, `Authorization`, and `x-tdai-service-id`.
 
 A gateway that allows only `Content-Type` and `Authorization` blocks the page. The browser sends `x-tdai-service-id` on every call.
+
+## Chat turns and manual facts
+
+A successful chat turn is `POST /v3/conversation/add` on the character card. The session id is the chat session. Empty text, a pure slash command, pure emoji, and an image with no caption are not stored. A copied system prompt and the memory index are removed before the write. The write runs in the background. A failure does not stop the chat.
+
+The v3 catalog on `feat/server_team` has `atomic/update`, `atomic/query`, `atomic/search`, and `atomic/delete`. It has no atomic create route. `atomic/update` returns 404 for an unknown id. Manual facts stay L0 JSON in session `airi:facts`, on agent `<card id>:facts`. The role is `assistant`, so that write does not start extraction. The chat agent does not receive the fact.
+
+The current team id and user id stay as they are. A private team id per user is a later change.
 
 ## Scope of L2 and L3
 

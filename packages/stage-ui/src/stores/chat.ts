@@ -50,6 +50,7 @@ import { resolveLlmTools } from './ai/chat-llm/tool-resolver'
 import { useLlmToolsStore } from './ai/chat-llm/tools'
 import { useLlmToolsetPromptsStore } from './ai/chat-llm/toolset-prompts'
 import { useAuthStore } from './auth'
+import { captureCompletedChatTurn } from './chat-turn-memory'
 import { createMinecraftContext, createRuntimePromptContext, createUserAccountContext } from './chat/context-providers'
 import { useChatContextStore } from './chat/context-store'
 import { describeChatImages, replaceToolResultImages } from './chat/image-projection'
@@ -1149,6 +1150,29 @@ export const useChatStore = defineStore('chat', () => {
       if (artistry?.autonomousEnabled && artistry?.autonomousTarget === 'assistant')
         void artistryAutonomousStore.runArtistTask(messageText, toProviderHistory(sessionMessages))
     },
+  })
+
+  // A finished turn is L0 on MemoryCore. The queue does not block the turn.
+  // This is not a subscription to input:text. A failed turn does not reach this hook.
+  runtime.hooks.onChatTurnComplete(async (chat, context) => {
+    try {
+      const stored = chatSession.getSessionMessages(context.sessionId).find(item => item.id === context.turnId)
+      captureCompletedChatTurn({
+        message: stored ?? context.message,
+        output: chat.output,
+        outputText: chat.outputText,
+        sessionId: context.sessionId,
+        turnId: context.turnId,
+        personaId: personaOf(context.sessionId),
+        systemPrompt: sessionSystemPrompt(context.sessionId),
+        record: (input) => {
+          memory.recordChatTurn(input)
+        },
+      })
+    }
+    catch (error) {
+      console.warn('[memory] Chat turn was not queued.', errorMessageFrom(error) ?? '')
+    }
   })
 
   // One request owns preparation and generation. Cancellation cannot miss asynchronous startup.
