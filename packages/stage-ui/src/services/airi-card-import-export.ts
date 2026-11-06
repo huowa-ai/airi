@@ -33,6 +33,43 @@ const parameterBindingSchema = object({
   offset: optional(number()),
 })
 
+const parameterMappingSchema = object({
+  headAngleX: optional(array(parameterBindingSchema)),
+  headAngleY: optional(array(parameterBindingSchema)),
+  headAngleZ: optional(array(parameterBindingSchema)),
+  bodyAngleX: optional(array(parameterBindingSchema)),
+  bodyAngleY: optional(array(parameterBindingSchema)),
+  bodyAngleZ: optional(array(parameterBindingSchema)),
+  eyeBallX: optional(array(parameterBindingSchema)),
+  eyeBallY: optional(array(parameterBindingSchema)),
+  mouthOpen: optional(array(parameterBindingSchema)),
+  mouthForm: optional(array(parameterBindingSchema)),
+  breath: optional(array(parameterBindingSchema)),
+})
+
+const parameterProbeSchema = object({
+  modelHash: string(),
+  mapping: parameterMappingSchema,
+  unused: array(object({
+    paramId: string(),
+    region: picklist(['head', 'torso', 'other']),
+    axis: optional(picklist(['x', 'y', 'z'])),
+    channel: optional(picklist([
+      'headAngleX',
+      'headAngleY',
+      'headAngleZ',
+      'bodyAngleX',
+      'bodyAngleY',
+      'bodyAngleZ',
+      'eyeBallX',
+      'eyeBallY',
+      'mouthOpen',
+      'mouthForm',
+      'breath',
+    ])),
+  })),
+})
+
 type DisplayModelsStore = ReturnType<typeof useDisplayModelsStore>
 type ShareableAiriCard = Card & { extensions: { airi: AiriExtension } }
 
@@ -48,19 +85,8 @@ const manifestSchema = object({
       controls: optional(object({
         disabledExpressions: array(string()),
         disabledMotions: array(string()),
-        parameterMapping: optional(object({
-          headAngleX: optional(array(parameterBindingSchema)),
-          headAngleY: optional(array(parameterBindingSchema)),
-          headAngleZ: optional(array(parameterBindingSchema)),
-          bodyAngleX: optional(array(parameterBindingSchema)),
-          bodyAngleY: optional(array(parameterBindingSchema)),
-          bodyAngleZ: optional(array(parameterBindingSchema)),
-          eyeBallX: optional(array(parameterBindingSchema)),
-          eyeBallY: optional(array(parameterBindingSchema)),
-          mouthOpen: optional(array(parameterBindingSchema)),
-          mouthForm: optional(array(parameterBindingSchema)),
-          breath: optional(array(parameterBindingSchema)),
-        })),
+        parameterMapping: optional(parameterMappingSchema),
+        parameterProbe: optional(parameterProbeSchema),
         skipMouthOpen: optional(boolean()),
       })),
     }),

@@ -12,6 +12,7 @@ import { useMouse } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
 import { computed, ref, watch } from 'vue'
 
+import { useLive2DModelFileHash } from '../../../../composables/use-live2d-model-file-hash'
 import { useLive2DStageMotionMagic } from '../../../../features/motions/live2d/use-live2d-stage-motion-magic'
 import { useSharedLive2DExpressionPreview } from '../../../../stores/live2d'
 import { useAiriCardStore } from '../../../../stores/modules/airi-card'
@@ -40,6 +41,10 @@ const { activeCardId, selectedAvatarModel, selectedAvatarModelId } = storeToRefs
 const live2dParameterMapping = computed(() => selectedAvatarModel.value?.type === 'live2d'
   ? selectedAvatarModel.value.config.controls.parameterMapping
   : undefined)
+const live2dParameterProbe = computed(() => selectedAvatarModel.value?.type === 'live2d'
+  ? selectedAvatarModel.value.config.controls.parameterProbe
+  : undefined)
+const live2dModelHash = useLive2DModelFileHash(() => selectedAvatarModel.value?.displayModelId)
 useSharedLive2DExpressionPreview(props.live2dContext, activeCardId, selectedAvatarModelId)
 const live2dSceneRef = ref<{ canvasElement: () => HTMLCanvasElement | undefined }>()
 const vrmSceneRef = ref<{ canvasElement: () => HTMLCanvasElement | undefined }>()
@@ -228,6 +233,8 @@ const cursorPosition = computed(() => ({
         :model-src="stageModelSelectedUrl"
         :model-id="stageModelSelected"
         :parameter-mapping="live2dParameterMapping"
+        :model-hash="live2dModelHash"
+        :parameter-probe="live2dParameterProbe"
         :cursor-position="cursorPosition"
         :theme-colors-hue="themeColorsHue"
         :theme-colors-hue-dynamic="themeColorsHueDynamic"

@@ -11,7 +11,7 @@ import type { Cubism4ModelSettings } from 'pixi-live2d-display/cubism4'
 
 import type { Live2DFocusTarget, Live2DTouch, PixiLive2DInternalModel } from '../../../composables/live2d'
 import type { Live2DExpressionControl } from '../../../controls/manifest'
-import type { Live2DParameterChannel, Live2DParameterMapping, Live2DPhysicsSettingsSource } from '../../../controls/parameter-mapping'
+import type { Live2DParameterChannel, Live2DParameterMapping, Live2DParameterProbeCache, Live2DPhysicsSettingsSource } from '../../../controls/parameter-mapping'
 
 import { Point } from '@pixi/math'
 import { listenBeatSyncBeatSignal } from '@proj-airi/stage-shared/beat-sync'
@@ -104,6 +104,8 @@ const props = withDefaults(defineProps<{
   screenAmbientLightSquint?: number
   /** Card mapping. Absent channels are resolved from the loaded model. */
   parameterMapping?: Live2DParameterMapping
+  modelHash?: string
+  parameterProbe?: Live2DParameterProbeCache
 }>(), {
   mouthOpenSize: 0,
   nowSpeaking: false,
@@ -146,8 +148,14 @@ const {
 
 const modelSrcRef = toRef(() => props.modelSrc)
 const parameterMapping = toRef(() => props.parameterMapping)
+const modelHash = toRef(() => props.modelHash)
+const parameterProbe = toRef(() => props.parameterProbe)
 const parameterCatalog = shallowRef(emptyLive2DParameterCatalog)
-const resolvedRig = computed(() => resolveLive2DParameterRig(parameterMapping.value, parameterCatalog.value))
+const resolvedRig = computed(() => resolveLive2DParameterRig(parameterMapping.value, {
+  ...parameterCatalog.value,
+  modelHash: modelHash.value,
+  parameterProbe: parameterProbe.value,
+}))
 const parameterRigStore = useLive2DParameterRig()
 
 const modelLoading = ref(false)

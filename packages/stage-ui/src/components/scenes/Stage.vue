@@ -33,6 +33,7 @@ import StageRenderError from './stage-render-error.vue'
 
 // import { useDuckDb } from '../../composables/use-duck-db'
 import { callSpeechSelection } from '../../composables/call/speech'
+import { useLive2DModelFileHash } from '../../composables/use-live2d-model-file-hash'
 import { Emotion, EMOTION_EmotionMotionName_value, EMOTION_VRMExpressionName_value, EmotionThinkMotionName } from '../../constants/emotions'
 import { useLive2DStageMotionMagic } from '../../features/motions/live2d/use-live2d-stage-motion-magic'
 import { createAvatarTouchAggregator } from '../../libs/avatar-touch/notify'
@@ -261,6 +262,10 @@ const { currentMotion } = storeToRefs(useLive2dParams())
 const live2dParameterMapping = computed(() => selectedAvatarModel.value?.type === 'live2d'
   ? selectedAvatarModel.value.config.controls.parameterMapping
   : undefined)
+const live2dParameterProbe = computed(() => selectedAvatarModel.value?.type === 'live2d'
+  ? selectedAvatarModel.value.config.controls.parameterProbe
+  : undefined)
+const live2dModelHash = useLive2DModelFileHash(() => selectedAvatarModel.value?.displayModelId)
 const live2d = createLive2D({
   controlPolicy: () => selectedAvatarModel.value?.type === 'live2d'
     ? selectedAvatarModel.value.config.controls
@@ -721,6 +726,8 @@ defineExpose({
         :model-src="stageModelSelectedUrl"
         :model-id="stageModelSelected"
         :parameter-mapping="live2dParameterMapping"
+        :model-hash="live2dModelHash"
+        :parameter-probe="live2dParameterProbe"
         :background-url="activeBackgroundUrl"
         :cursor-position="cursorPosition"
         :mouth-open-size="mouthOpenSize"

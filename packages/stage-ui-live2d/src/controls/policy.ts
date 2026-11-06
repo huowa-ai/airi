@@ -1,5 +1,5 @@
 import type { Live2DControlPolicy } from '../types/avatar-model'
-import type { Live2DParameterBinding, Live2DParameterMapping } from './parameter-mapping'
+import type { Live2DParameterBinding, Live2DParameterMapping, Live2DParameterProbeCache, Live2DUnusedParameter } from './parameter-mapping'
 
 import { live2dParameterChannels } from './parameter-mapping'
 
@@ -41,7 +41,25 @@ export function copyLive2DControlPolicy(policy: Live2DControlPolicy): Live2DCont
     disabledExpressions: [...policy.disabledExpressions],
     disabledMotions: [...policy.disabledMotions],
     ...(policy.parameterMapping ? { parameterMapping: copyParameterMapping(policy.parameterMapping) } : {}),
+    ...(policy.parameterProbe ? { parameterProbe: copyParameterProbe(policy.parameterProbe) } : {}),
     ...(typeof policy.skipMouthOpen === 'boolean' ? { skipMouthOpen: policy.skipMouthOpen } : {}),
+  }
+}
+
+function copyUnused(parameter: Live2DUnusedParameter): Live2DUnusedParameter {
+  return {
+    paramId: parameter.paramId,
+    region: parameter.region,
+    ...(parameter.axis ? { axis: parameter.axis } : {}),
+    ...(parameter.channel ? { channel: parameter.channel } : {}),
+  }
+}
+
+function copyParameterProbe(probe: Live2DParameterProbeCache): Live2DParameterProbeCache {
+  return {
+    modelHash: probe.modelHash,
+    mapping: copyParameterMapping(probe.mapping),
+    unused: probe.unused.map(copyUnused),
   }
 }
 
@@ -82,6 +100,7 @@ export function updateLive2DControlPolicy(
       ? nextDisabledIds
       : [...policy.disabledMotions],
     parameterMapping: policy.parameterMapping,
+    parameterProbe: policy.parameterProbe,
     skipMouthOpen: policy.skipMouthOpen,
   })
 }

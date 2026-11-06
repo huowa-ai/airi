@@ -280,9 +280,26 @@ describe('live2d parameter rig layers', () => {
     expect(rig.channels.headAngleX.bindings).toEqual([{ paramId: 'ParamAngleX' }])
     expect(rig.channels.bodyAngleX.layer).toBe('default')
     expect(rig.channels.bodyAngleX.bindings).toEqual([{ paramId: 'ParamBodyAngleX' }])
+    expect(rig.channels.bodyAngleX.bindings.some(binding => binding.paramId === 'PositionX')).toBe(false)
     expect(rig.channels.eyeBallX.layer).toBe('default')
     expect(rig.channels.breath.layer).toBe('default')
     expect(rig.channels.breath.bindings).toEqual([{ paramId: 'ParamBreath' }])
+  })
+
+  it('maps physics root pose inputs onto the body channels', () => {
+    const rig = resolveLive2DParameterRig(undefined, {
+      parameterIds: ['ParamBodyAngleX', 'ParamBodyAngleY', 'ParamBodyAngleZ', 'PositionX', 'PositionY', 'PositionZ', 'LeanInput', 'HipAngleX'],
+      physicsInputIds: ['PositionX', 'LeanInput', 'PositionY', 'PositionZ', 'ParamBodyAngleX', 'HipAngleX'],
+    })
+
+    expect(rig.channels.bodyAngleX.bindings.map(binding => binding.paramId)).toEqual([
+      'ParamBodyAngleX',
+      'PositionX',
+      'LeanInput',
+      'HipAngleX',
+    ])
+    expect(rig.channels.bodyAngleY.bindings.map(binding => binding.paramId)).toEqual(['ParamBodyAngleY', 'PositionY'])
+    expect(rig.channels.bodyAngleZ.bindings.map(binding => binding.paramId)).toEqual(['ParamBodyAngleZ', 'PositionZ'])
   })
 
   it('lets a card body mapping replace the structural fan-out', () => {
@@ -345,6 +362,41 @@ describe('live2d focus mapping', () => {
     target.updateFocus()
 
     expect(model.values.get('ParamAngleX')).toBe(8)
+  })
+
+  it('sets physics root inputs absolutely and leaves a model without them unchanged', () => {
+    const model = createModel()
+    const ids = ['PositionX', 'LeanInput', 'PositionY', 'PositionZ', 'ParamBodyAngleX']
+    const withRoots = { ...model, _parameterIds: ids }
+    const focus = { x: 1, y: 0.5 }
+    const target = {
+      focusController: focus,
+      coreModel: withRoots,
+      updateFocus: () => undefined,
+    }
+    installLive2DFocusMapping(target, () => defaultLive2DParameterRig)
+
+    target.updateFocus()
+    target.updateFocus()
+
+    expect(withRoots.values.get('PositionX')).toBe(30)
+    expect(withRoots.values.get('LeanInput')).toBe(30)
+    expect(withRoots.values.get('PositionY')).toBe(15)
+    expect(withRoots.values.get('PositionZ')).toBe(10)
+    expect(withRoots.values.get('ParamBodyAngleX')).toBe(20)
+
+    const plain = createModel()
+    const hiyori = {
+      focusController: { x: 1, y: 0 },
+      coreModel: { ...plain, _parameterIds: ['ParamAngleX', 'ParamBodyAngleX'] },
+      updateFocus: () => undefined,
+    }
+    installLive2DFocusMapping(hiyori, () => defaultLive2DParameterRig)
+    hiyori.updateFocus()
+
+    expect(hiyori.coreModel.values.has('PositionX')).toBe(false)
+    expect(hiyori.coreModel.values.has('LeanInput')).toBe(false)
+    expect(hiyori.coreModel.values.get('ParamBodyAngleX')).toBe(10)
   })
 })
 

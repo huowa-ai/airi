@@ -52,7 +52,7 @@ export type Live2DParameterMapping = Partial<Record<Live2DParameterChannel, read
  * `structural` means physics input groups or display names, including
  * translated group names from the Cubism display info file.
  */
-export type Live2DParameterMappingLayer = 'card' | 'structural' | 'name' | 'default'
+export type Live2DParameterMappingLayer = 'card' | 'probe' | 'structural' | 'name' | 'default'
 
 /** Bindings for one channel and the layer that selected them. */
 export interface Live2DResolvedParameterChannel {
@@ -70,6 +70,27 @@ export interface Live2DResolvedParameterRig {
 export interface Live2DParameterRange {
   min: number
   max: number
+}
+
+/** A parameter that moved a mesh and is not in a follow channel. */
+export interface Live2DUnusedParameter {
+  paramId: string
+  region: 'head' | 'torso' | 'other'
+  axis?: 'x' | 'y' | 'z'
+  /** Channel a one-click add writes. Absent when the region has no axis. */
+  channel?: Live2DParameterChannel
+}
+
+/**
+ * Measurement cache stored on the character card.
+ *
+ * `modelHash` is the hash of the model file. A different file ignores this cache.
+ */
+export interface Live2DParameterProbeCache {
+  modelHash: string
+  /** Channels whose bindings differ from structure after the measurement. */
+  mapping: Live2DParameterMapping
+  unused: readonly Live2DUnusedParameter[]
 }
 
 /** One parameter row from a Cubism display info file. */
@@ -96,6 +117,10 @@ export interface Live2DParameterCatalog {
   physicsGroups?: readonly (readonly string[])[]
   parameterRanges?: Readonly<Record<string, Live2DParameterRange>>
   parameterDescriptors?: readonly Live2DParameterDescriptor[]
+  /** Hash of the model file that `parameterProbe` was measured against. */
+  modelHash?: string
+  /** Measurement cache. It applies only when `modelHash` matches. */
+  parameterProbe?: Live2DParameterProbeCache
 }
 
 /** A value held on one channel while the settings test sweep runs. */
@@ -236,7 +261,7 @@ function sameAsDefault(channel: Live2DParameterChannel, bindings: readonly Live2
  * Chest and bust ids stay out. On bundled models such as Hiyori those names
  * belong to secondary parts, not the follow skeleton.
  */
-const bodyIdPattern = /hip|waist|shoulder|bodyangle|torso/i
+const bodyIdPattern = /hip|waist|shoulder|bodyangle|torso|position[xyz]|leaninput/i
 /** Expression and limb ids that must not follow the head or the body. */
 const excludedIdPattern = /open|smile|squint|brow|tear|lash|highlight|leg|arm|hand|finger|hair|skirt|ear|ribbon/i
 const hairTextPattern = /头发|[髪发裙耳]|hair|skirt|ear/i
@@ -321,7 +346,24 @@ function descriptorFamily(id: string, descriptor: Live2DParameterDescriptor): 'h
   return undefined
 }
 
+/**
+ * Physics-root pose inputs that drive body outputs such as `HipAngle*` and
+ * `ParamBodyAngle*`. `LeanInput` has no axis letter and still feeds lateral lean.
+ */
+export function live2dPhysicsRootBodyChannel(id: string): Live2DParameterChannel | undefined {
+  if (/^LeanInput$/i.test(id) || /^PositionX$/i.test(id))
+    return 'bodyAngleX'
+  if (/^PositionY$/i.test(id))
+    return 'bodyAngleY'
+  if (/^PositionZ$/i.test(id))
+    return 'bodyAngleZ'
+  return undefined
+}
+
 function structuralChannel(id: string, descriptor: Live2DParameterDescriptor | undefined): Live2DParameterChannel | undefined {
+  const rootChannel = live2dPhysicsRootBodyChannel(id)
+  if (rootChannel)
+    return rootChannel
   const axis = axisOf(id)
   if (bodyIdPattern.test(id) && axis)
     return channelForFamily('body', axis)
@@ -478,25 +520,34 @@ function resolveChannel(
   if (cardBindings)
     return { channel, bindings: cardBindings, layer: 'card' }
 
-  // Layer 2. Physics groups and display names name the parameters that move.
+  // Layer 2. A measurement cache applies only for the same model file.
+  const probe = catalog.parameterProbe
+  if (probe && catalog.modelHash && probe.modelHash === catalog.modelHash) {
+    const probed = bindingsFromCard(probe.mapping, channel)
+    if (probed)
+      return { channel, bindings: probed, layer: 'probe' }
+  }
+
+  // Layer 3. Physics groups and display names name the parameters that move.
   const structuralBindings = bindingsFromStructure(channel, catalog)
   if (structuralBindings)
     return { channel, bindings: structuralBindings, layer: 'structural' }
 
-  // Layer 3. A known alias is used only when the standard id is absent.
+  // Layer 4. A known alias is used only when the standard id is absent.
   const nameBindings = bindingsFromName(channel, catalog)
   if (nameBindings)
     return { channel, bindings: nameBindings, layer: 'name' }
 
-  // Layer 4. Write the standard id. Cubism ignores an id the model does not have.
+  // Layer 5. Write the standard id. Cubism ignores an id the model does not have.
   return defaultLive2DParameterRig.channels[channel]
 }
 
 /**
  * Resolves one rig from a card mapping and a model catalog.
  *
- * Priority for each channel is card, then physics groups and display names,
- * then a parameter name, then the standard Cubism id.
+ * Priority for each channel is card, then a measurement for the same file,
+ * then physics groups and display names, then a parameter name, then the
+ * standard Cubism id.
  *
  * @example
  * resolveLive2DParameterRig(undefined, {
@@ -586,6 +637,35 @@ export function readLive2DParameter(
  */
 const focusDegrees = { head: 30, body: 10 } as const
 
+function coreHasParameter(model: Live2DParameterWriter, id: string): boolean {
+  const ids = (model as { _parameterIds?: readonly unknown[] })._parameterIds
+  if (!Array.isArray(ids))
+    return false
+  return ids.some(item => parameterIdText(item) === id)
+}
+
+/**
+ * Writes the focus lean into physics-root pose inputs.
+ *
+ * Physics runs after focus and rebuilds `HipAngle*` and `ParamBodyAngle*`
+ * from these inputs. Motion does not reload them each frame, so an add would
+ * stick at the clamp. An absolute write stays reversible. A model without
+ * the id, such as Hiyori, is left unchanged.
+ */
+function writePhysicsRootPose(
+  model: Live2DParameterWriter,
+  focus: { x: number, y: number },
+): void {
+  const write = (id: string, value: number) => {
+    if (coreHasParameter(model, id))
+      model.setParameterValueById(id, value)
+  }
+  write('PositionX', focus.x * focusDegrees.head)
+  write('LeanInput', focus.x * focusDegrees.head)
+  write('PositionY', focus.y * focusDegrees.head)
+  write('PositionZ', focus.x * focusDegrees.body)
+}
+
 /**
  * Replaces the built-in focus update so every bound parameter receives it.
  *
@@ -610,6 +690,7 @@ export function installLive2DFocusMapping(
     addLive2DParameter(focusModel.coreModel, current, 'headAngleY', focus.y * focusDegrees.head)
     addLive2DParameter(focusModel.coreModel, current, 'headAngleZ', focus.x * focus.y * -focusDegrees.head)
     addLive2DParameter(focusModel.coreModel, current, 'bodyAngleX', focus.x * focusDegrees.body)
+    writePhysicsRootPose(focusModel.coreModel, focus)
 
     const currentProbe = probe?.()
     if (currentProbe)

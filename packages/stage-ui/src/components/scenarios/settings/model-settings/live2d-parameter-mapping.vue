@@ -1,16 +1,19 @@
 <script setup lang="ts">
 import type { Live2DParameterBinding, Live2DParameterChannel, Live2DParameterMappingLayer } from '@proj-airi/stage-ui-live2d'
 
-import { live2dParameterChannels, resolveLive2DParameterRig, useLive2DParameterRig } from '@proj-airi/stage-ui-live2d'
+import { live2dParameterChannels, live2dProbeCacheFromMotions, live2dProbeCacheMatches, measureLive2DParameterMotions, openOffscreenLive2DProbeTarget, resolveLive2DParameterRig, useLive2DParameterRig } from '@proj-airi/stage-ui-live2d'
 import { Button, FieldInput, FieldSelect } from '@proj-airi/ui'
 import { storeToRefs } from 'pinia'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import { hashLive2DDisplayModel, useLive2DModelFileHash } from '../../../../composables/use-live2d-model-file-hash'
+import { useDisplayModelsStore } from '../../../../stores/display-models'
 import { useAiriCardStore } from '../../../../stores/modules/airi-card'
 
 const { t } = useI18n()
 const airiCardStore = useAiriCardStore()
+const displayModels = useDisplayModelsStore()
 const { activeCardId, selectedAvatarModel } = storeToRefs(airiCardStore)
 const parameterRig = useLive2DParameterRig()
 const { catalog, testingChannel } = storeToRefs(parameterRig)
@@ -31,6 +34,7 @@ const channelLabel = computed<Record<Live2DParameterChannel, string>>(() => ({
 
 const layerLabel = computed<Record<Live2DParameterMappingLayer, string>>(() => ({
   card: t('settings.live2d.parameters.mapping.layer.card'),
+  probe: t('settings.live2d.parameters.mapping.layer.probe'),
   structural: t('settings.live2d.parameters.mapping.layer.structural'),
   name: t('settings.live2d.parameters.mapping.layer.name'),
   default: t('settings.live2d.parameters.mapping.layer.default'),
@@ -39,7 +43,20 @@ const layerLabel = computed<Record<Live2DParameterMappingLayer, string>>(() => (
 const controls = computed(() => selectedAvatarModel.value?.type === 'live2d'
   ? selectedAvatarModel.value.config.controls
   : undefined)
-const resolved = computed(() => resolveLive2DParameterRig(controls.value?.parameterMapping, catalog.value))
+const modelHash = useLive2DModelFileHash(() => selectedAvatarModel.value?.displayModelId)
+const detecting = ref(false)
+const probeMatchesModel = computed(() => live2dProbeCacheMatches(modelHash.value, controls.value?.parameterProbe))
+const resolved = computed(() => resolveLive2DParameterRig(controls.value?.parameterMapping, {
+  ...catalog.value,
+  modelHash: modelHash.value,
+  parameterProbe: controls.value?.parameterProbe,
+}))
+const unusedParameters = computed(() => {
+  if (!probeMatchesModel.value)
+    return []
+  const used = new Set(live2dParameterChannels.flatMap(channel => resolved.value.channels[channel].bindings.map(binding => binding.paramId)))
+  return (controls.value?.parameterProbe?.unused ?? []).filter(parameter => !used.has(parameter.paramId))
+})
 const skipMode = computed(() => {
   if (controls.value?.skipMouthOpen === true)
     return 'skip'
@@ -63,6 +80,7 @@ function copyBinding(binding: Live2DParameterBinding): Live2DParameterBinding {
 
 async function saveControls(patch: {
   parameterMapping?: NonNullable<typeof controls.value>['parameterMapping']
+  parameterProbe?: NonNullable<typeof controls.value>['parameterProbe']
   skipMouthOpen?: boolean
   clearMapping?: boolean
   clearSkip?: boolean
@@ -76,8 +94,48 @@ async function saveControls(patch: {
     disabledExpressions: current.disabledExpressions,
     disabledMotions: current.disabledMotions,
     ...(patch.clearMapping ? {} : { parameterMapping: patch.parameterMapping ?? current.parameterMapping }),
+    parameterProbe: patch.parameterProbe ?? current.parameterProbe,
     ...(patch.clearSkip ? {} : { skipMouthOpen: patch.skipMouthOpen ?? current.skipMouthOpen }),
   })
+}
+
+async function detectParameters() {
+  const avatar = selectedAvatarModel.value
+  if (!avatar || avatar.type !== 'live2d' || detecting.value)
+    return
+  const displayModel = await displayModels.getDisplayModel(avatar.displayModelId)
+  if (!displayModel)
+    return
+  detecting.value = true
+  try {
+    const hash = modelHash.value ?? await hashLive2DDisplayModel(displayModel)
+    if (live2dProbeCacheMatches(hash, avatar.config.controls.parameterProbe))
+      return
+    const target = await openOffscreenLive2DProbeTarget(displayModel.type === 'file' ? displayModel.file : displayModel.url)
+    try {
+      const motions = await measureLive2DParameterMotions(target, {
+        afterEach: () => new Promise(resolve => setTimeout(resolve, 0)),
+      })
+      const cache = live2dProbeCacheFromMotions({
+        ...catalog.value,
+        modelHash: hash,
+      }, motions, hash)
+      await saveControls({ parameterProbe: cache })
+    }
+    finally {
+      target.destroy()
+    }
+  }
+  finally {
+    detecting.value = false
+  }
+}
+
+async function addUnusedParameter(parameter: { paramId: string, channel?: Live2DParameterChannel }) {
+  const channel = parameter.channel ?? 'bodyAngleX'
+  const next = drafts(channel).filter(binding => binding.paramId !== parameter.paramId)
+  next.push({ paramId: parameter.paramId })
+  await saveChannel(channel, next)
 }
 
 async function saveChannel(channel: Live2DParameterChannel, bindings: readonly Live2DParameterBinding[] | undefined) {
@@ -134,6 +192,50 @@ async function setSkipMode(mode: string | number | undefined) {
     <p :class="['text-xs text-neutral-500 dark:text-neutral-400']">
       {{ t('settings.live2d.parameters.mapping.description') }}
     </p>
+    <div :class="['flex flex-wrap items-center gap-2']">
+      <Button
+        size="sm"
+        :disabled="detecting || probeMatchesModel"
+        @click="detectParameters"
+      >
+        {{ detecting
+          ? t('settings.live2d.parameters.mapping.detect.running')
+          : t('settings.live2d.parameters.mapping.detect.action') }}
+      </Button>
+      <p :class="['text-xs text-neutral-500 dark:text-neutral-400']">
+        {{ probeMatchesModel
+          ? t('settings.live2d.parameters.mapping.detect.cached')
+          : t('settings.live2d.parameters.mapping.detect.description') }}
+      </p>
+    </div>
+    <div
+      v-if="unusedParameters.length > 0"
+      :class="['grid gap-2']"
+    >
+      <div :class="['text-sm font-medium']">
+        {{ t('settings.live2d.parameters.mapping.unused.title') }}
+      </div>
+      <p :class="['text-xs text-neutral-500 dark:text-neutral-400']">
+        {{ t('settings.live2d.parameters.mapping.unused.description') }}
+      </p>
+      <div
+        v-for="parameter in unusedParameters"
+        :key="parameter.paramId"
+        :class="['flex flex-wrap items-center gap-2']"
+      >
+        <span :class="['text-sm']">{{ parameter.paramId }}</span>
+        <Button
+          size="sm"
+          @click="addUnusedParameter(parameter)"
+        >
+          {{ t('settings.live2d.parameters.mapping.unused.add', {
+            channel: parameter.channel
+              ? channelLabel[parameter.channel]
+              : channelLabel.bodyAngleX,
+          }) }}
+        </Button>
+      </div>
+    </div>
     <FieldSelect
       :model-value="skipMode"
       :label="t('settings.live2d.parameters.mapping.skip-mouth.title')"

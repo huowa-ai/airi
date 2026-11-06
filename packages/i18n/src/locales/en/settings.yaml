@@ -282,9 +282,19 @@ live2d:
       description: AIRI writes these channels. A card mapping wins. Model structure comes next. A parameter name is the last source.
       layer:
         card: Card
+        probe: Measured
         structural: Structure
         name: Name
         default: Default
+      detect:
+        action: Detect motion
+        running: Detecting
+        description: Measure an offscreen copy of this model. The avatar on screen stays still. A new model file runs it again.
+        cached: This measurement matches the model file.
+      unused:
+        title: Parameters that move and are unused
+        description: These parameters move a mesh and are not in a follow channel.
+        add: Add to {channel}
       columns:
         parameter: Parameter
         scale: Scale
