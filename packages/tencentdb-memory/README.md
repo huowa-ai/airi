@@ -50,7 +50,11 @@ A gateway that allows only `Content-Type` and `Authorization` blocks the page. T
 
 ## Chat turns and manual facts
 
-A successful chat turn and a manual fact both call `appendConversation`. The agent id is the character card, or `airi:general`. The chat session id is the chat session. Empty text, a pure slash command, pure emoji, and an image with no caption are not stored. A copied system prompt and the memory index are removed before the write. The write runs in the background. A failure does not stop the chat.
+A successful chat turn and a manual fact both call `appendConversation`. The agent id is the character card, or `airi:general`. The chat session id is the chat session. Empty text, a pure slash command, pure emoji, and an image with no caption are not stored.
+
+An interrupted turn is stored when the assistant text already played. That text includes a played filler. An interrupted turn with no played text is not stored. A failed turn is not stored.
+
+A copied system prompt and the memory index are removed before the write. The write runs in the background. A failure does not stop the chat.
 
 Manual facts stay L0 JSON in session `airi:facts`. The role comes from `factRecordRole` in `memory-core-contract.ts`. That module is the only place that encodes the gateway extraction rule. A fact batch has no user message, so it does not start L1 extraction. A chat batch does.
 

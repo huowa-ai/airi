@@ -37,6 +37,10 @@ export interface ChatTurnInput {
   teamId?: string
   /** Resolved user. The retry uses this scope when the success response was lost. */
   userId?: string
+  /**
+   * Playback stopped before the reply finished.
+   * Played assistant text is stored. Empty played text is skipped.
+   */
   interrupted?: boolean
   failed?: boolean
 }
@@ -48,6 +52,9 @@ export type ChatTurnDecision
 /**
  * Decides whether a finished turn is stored as L0.
  * Empty text, a pure slash command, pure emoji, and an image with no caption are skipped.
+ * An interrupted turn is stored when assistant text already played, including a played filler.
+ * An interrupted turn with no played text is skipped.
+ * A failed turn is skipped.
  * Filler and duplicates stay with the MemoryCore L1 prompt.
  *
  * @example
@@ -57,11 +64,12 @@ export type ChatTurnDecision
 export function decideChatTurn(input: ChatTurnInput): ChatTurnDecision {
   if (input.failed)
     return { action: 'skip', reason: 'failed' }
-  if (input.interrupted)
-    return { action: 'skip', reason: 'interrupted' }
 
   const userText = clip(sanitizeTurnText(input.userText, input.systemPrompt))
   const assistantText = clip(sanitizeTurnText(input.assistantText, input.systemPrompt))
+  // An interrupt stores only text that already played. Empty playback is not a turn.
+  if (input.interrupted && assistantText === '')
+    return { action: 'skip', reason: 'interrupted' }
   if (input.imageOnly && userText === '')
     return { action: 'skip', reason: 'image' }
   if (userText === '' || assistantText === '')
