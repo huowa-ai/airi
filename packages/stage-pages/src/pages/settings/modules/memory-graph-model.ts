@@ -149,6 +149,8 @@ export function buildMemoryGraph(input: {
   cores?: readonly MemoryGraphCore[]
   layerErrors?: readonly MemoryGraphLayerError[]
   truncatedLayers?: readonly ('L1' | 'L2' | 'L3')[]
+  /** Label for a persona file that has no heading and no text. */
+  personaLabel?: string
 }): MemoryGraphModel {
   const layerErrors = input.layerErrors ?? NO_ERRORS
   const truncatedLayers = input.truncatedLayers ?? NO_TRUNCATED
@@ -169,6 +171,7 @@ export function buildMemoryGraph(input: {
   const atoms = [...(input.atoms ?? NO_ATOMS)].sort((left, right) => (left.updatedAt ?? 0) - (right.updatedAt ?? 0) || left.id.localeCompare(right.id))
   const scenes = [...(input.scenes ?? NO_SCENES)].sort((left, right) => left.path.localeCompare(right.path))
   const cores = [...(input.cores ?? NO_CORES)].sort((left, right) => (left.persona ?? '').localeCompare(right.persona ?? ''))
+  const personaLabel = input.personaLabel ?? ''
   const layered = atoms.length + scenes.length + cores.length > 0
 
   const factNodes = facts.map((fact, index) => ({
@@ -200,7 +203,7 @@ export function buildMemoryGraph(input: {
   }))
   const coreNodes = cores.map((core, index) => node({
     id: `l3:${core.persona ?? 'general'}`,
-    label: personaSections(core.content)[0]?.heading || shortLabel(core.content, 'Persona'),
+    label: personaSections(core.content, personaLabel)[0]?.heading || shortLabel(core.content, personaLabel),
     layer: 'L3',
     kind: 'core',
     scope: 'team-agent',
@@ -248,14 +251,14 @@ export function buildMemoryGraph(input: {
     })),
     ...cores.map(core => detail({
       id: `l3:${core.persona ?? 'general'}`,
-      label: personaSections(core.content)[0]?.heading || shortLabel(core.content, 'Persona'),
+      label: personaSections(core.content, personaLabel)[0]?.heading || shortLabel(core.content, personaLabel),
       layer: 'L3',
       kind: 'core',
       scope: 'team-agent',
       persona: core.persona,
       body: core.content,
       updatedAt: core.updatedAt,
-      sections: personaSections(core.content),
+      sections: personaSections(core.content, personaLabel),
     })),
   ]
 
@@ -357,10 +360,10 @@ export function readMemoryGraphSource(provenance: unknown): MemoryGraphSource | 
  * A file with no heading is one section. The graph still draws one persona node.
  *
  * @example
- * personaSections('# Name\n\nAda')
+ * personaSections('# Name\n\nAda', 'Persona')
  * // => [{ heading: 'Name', body: 'Ada' }]
  */
-export function personaSections(content: string): MemoryGraphSection[] {
+export function personaSections(content: string, emptyLabel = ''): MemoryGraphSection[] {
   const sections: MemoryGraphSection[] = []
   let heading = ''
   let body: string[] = []
@@ -369,7 +372,7 @@ export function personaSections(content: string): MemoryGraphSection[] {
     if (!heading && !text)
       return
     const firstLine = text.split('\n').map(line => line.trim()).find(Boolean) ?? ''
-    sections.push({ heading: heading || firstLine.slice(0, 80) || 'Persona', body: text })
+    sections.push({ heading: heading || firstLine.slice(0, 80) || emptyLabel, body: text })
   }
 
   for (const line of content.split(/\r?\n/)) {

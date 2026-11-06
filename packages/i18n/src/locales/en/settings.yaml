@@ -1146,6 +1146,9 @@ pages:
         enable-description: The memory service is the long-term memory for this character. When this is on, the character reads and writes only that service. When this is off, or the service cannot be reached, long-term memory stays empty. Memories kept only on this device are not used.
         endpoint: Service address
         endpoint-description: An http or https origin, such as http://127.0.0.1:8420. Do not put a key in the address.
+        endpoint-placeholder: http://127.0.0.1:8420
+        address-missing: Set the service address.
+        request-failed: The memory service request failed.
         team: Private team
         team-description: The service builds this team from the local account. Another account gets another team.
         user: Local account id

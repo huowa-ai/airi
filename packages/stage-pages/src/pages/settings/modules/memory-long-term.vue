@@ -5,7 +5,10 @@ import { storeToRefs } from 'pinia'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
 
+import { useMemoryServiceMessage } from './memory-service-message'
+
 const { t } = useI18n()
+const serviceMessage = useMemoryServiceMessage()
 const {
   enabled,
   serviceEnabled,
@@ -33,7 +36,7 @@ const {
         v-model="serviceEndpoint"
         :label="t('settings.pages.modules.memory-long-term.service.endpoint')"
         :description="t('settings.pages.modules.memory-long-term.service.endpoint-description')"
-        placeholder="http://127.0.0.1:8420"
+        :placeholder="t('settings.pages.modules.memory-long-term.service.endpoint-placeholder')"
       />
       <div v-if="scope" :class="['flex flex-col', 'gap-1']">
         <p :class="['text-sm font-medium']">
@@ -64,7 +67,7 @@ const {
         :description="t('settings.pages.modules.memory-long-term.service.key-description')"
       />
       <p v-if="serviceError" :class="['text-sm', 'text-red-600 dark:text-red-400']">
-        {{ serviceError }}
+        {{ serviceMessage(serviceError) }}
       </p>
     </div>
     <RouterLink

@@ -9,8 +9,10 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { memorySearchKey } from './memory-long-term-memories.search'
+import { useMemoryServiceMessage } from './memory-service-message'
 
 const { t } = useI18n()
+const serviceMessage = useMemoryServiceMessage()
 const memory = useMemoryStore()
 const { cards } = storeToRefs(useAiriCardStore())
 const { serviceRead, serviceError } = storeToRefs(memory)
@@ -50,7 +52,7 @@ function remove(entry: MemoryEntry) {
       {{ t(`${KEY}.service-off`) }}
     </Alert>
     <Alert v-else-if="serviceRead === 'error'" tone="danger" :title="t(`${KEY}.service-error-title`)">
-      {{ serviceError || t(`${KEY}.service-error`) }}
+      {{ serviceError ? serviceMessage(serviceError) : t(`${KEY}.service-error`) }}
     </Alert>
     <Alert v-else-if="serviceRead === 'loading'" tone="info" :title="t(`${KEY}.loading`)" loading />
 

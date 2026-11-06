@@ -1078,16 +1078,104 @@ pages:
       description: 长期记忆
       enable: 使用长期记忆
       enable-description: 角色会记住聊过的事。关掉后，它什么都不记得。
+      service:
+        enable: 使用记忆服务
+        enable-description: 记忆服务是这个角色的长期记忆。开启后，角色只读写这项服务。关闭后，或服务连不上时，长期记忆是空的。只存在这台设备上的记忆不会被使用。
+        endpoint: 服务地址
+        endpoint-description: 一个 http 或 https 源地址，例如 http://127.0.0.1:8420。不要把密钥写进地址。
+        endpoint-placeholder: http://127.0.0.1:8420
+        address-missing: 请设置服务地址。
+        request-failed: 记忆服务请求失败。
+        team: 私人团队
+        team-description: 服务会用本机账号生成这个团队。换一个账号会得到另一个团队。
+        user: 本机账号 id
+        user-description: 这台设备的本机账号。空着保存一次后会继续用。
+        key: API 密钥
+        key-description: 必填。网关会拒绝没有 Authorization 头的请求。空着会发送密钥 local。密钥只留在这台设备上。
+        service-id: 服务 id
+        service-id-description: 必填。网关会拒绝没有 x-tdai-service-id 头的请求。空着会发送 default。
       memories:
         title: 记忆
         description: 这是每个角色自己记下的小秘密，彼此看不到。共享后所有角色都会知道，而且收不回来哦。你可以删掉任何一条，但不能改写。
         empty: 还没有记忆。
+        service-off-title: 记忆服务已关闭
+        service-off: 长期记忆只读取记忆服务。打开服务后才能看到事实。本页不列出只存在这台设备上的记忆。
+        service-error-title: 记忆服务出错
+        service-error: 记忆服务没有返回事实。
+        loading: 正在读取记忆服务。
         forget: '忘掉{name}'
         make_general: '把{name}共享给所有角色'
         general: 共享的秘密
         entry:
           title: 记忆
           description: 每个角色的小秘密，和大家共享的秘密。
+      graph:
+        title: 记忆图
+        description: 这是记忆服务返回的记录。画面用鲸形布局。画面里的线只用于布局。
+        off-title: 记忆服务已关闭
+        off: 打开记忆服务才能看到事实。这个视图不列出只存在这台设备上的记忆。
+        error-title: 记忆服务出错
+        error: 记忆服务没有返回事实。
+        loading: 正在读取记忆服务。
+        empty-title: 没有事实
+        empty: 记忆服务返回的事实是空的。
+        reduced: 系统减少了动画。图保持静止。列表显示同样的事实。
+        unavailable-title: 图视图不可用
+        unavailable: 图视图没有启动。事实列表仍显示同样的事实。
+        layers:
+          l0: L0 事实
+          l1: L1 原子
+          l2: L2 场景
+          l3: L3 人设
+        scope: 范围
+        scope-current: '当前范围：团队 {team}。'
+        scope-note: 场景和人设跟随团队 {team} 和这个角色。
+        scope-team: 这条记录跟随团队 {team} 和这个角色。
+        layer-error: '{layer} 请求失败。{message}'
+        truncated: '服务里的 {layer} 记录比这个视图画的多。'
+        type: 类型
+        path: 路径
+        summary: 摘要
+        background: 背景
+        types:
+          episodic: 情节
+          persona: 人设
+          instruction: 指令
+          other: 其他
+        derived: 派生的布局线。这条线不是已存储的关系。
+        counts: '记录：{count}。派生布局线：{lines}。'
+        canvas-label: '{count} 条记录和 {lines} 条派生布局线的记忆图。'
+        facts: 事实
+        list-empty: 没有可列出的事实。
+        detail: 事实
+        card: 角色
+        shared: 已共享
+        updated: 更新时间
+        source: 来源
+        no-source: 这条事实没有存来源。
+        filter-source: 回合来源
+        filter-source-all: 全部回合
+        filter-call: 通话 id
+        filter-call-placeholder: 按一个通话 id 筛选
+        turn-source: 回合来源
+        call: 通话
+        sources:
+          voice: 语音
+          video: 视频
+          text: 文字
+        delete: 删除
+        delete-confirm: 从记忆服务删除这条记录？
+        delete-yes: 删除
+        delete-no: 取消
+        delete-l3: 记忆服务不能删除人设。本页不会移除它。
+        delete-failed: 记忆服务没有删除这条记录。
+        session: '会话 {id}'
+        turn: '回合 {id}'
+        binding: '场景 {id}'
+        modality: '模态 {name}'
+        entry:
+          title: 记忆图
+          description: 记忆服务的记录，用鲸形布局显示。
       recipes:
         title: 配方
         empty: 还没有配方。
@@ -1160,6 +1248,7 @@ pages:
           label: 允许角色提议配方
           description: 你让角色建配方时，它会先存成提议，你批准后才生效。
         model_flow: 每次做什么由角色决定
+      unknown-character: 未知角色
       title: 长期记忆
     memory-short-term:
       description: 短期记忆

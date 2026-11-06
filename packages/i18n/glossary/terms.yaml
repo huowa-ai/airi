@@ -537,6 +537,18 @@
       status: preferred
       context: The L2 scene groups related atoms.
 
+- id: memory-graph
+  subject: memory
+  translatable: true
+  definition: The settings view that draws memory-service records in a whale-shaped layout.
+  note: >
+    Do not call the lines a stored relation. The lines are layout only.
+  terms:
+    - text: Memory graph
+      part-of-speech: noun
+      status: preferred
+      context: A view of the records the memory service returned.
+
 - id: memory-persona
   subject: memory
   translatable: true
