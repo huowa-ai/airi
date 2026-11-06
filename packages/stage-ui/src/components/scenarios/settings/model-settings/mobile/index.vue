@@ -11,6 +11,7 @@ import { useI18n } from 'vue-i18n'
 
 import MagicMotionSettings from '../../../../../features/motions/live2d/components/magic-settings.vue'
 import Live2DExpressionList from '../live2d-expression-list.vue'
+import Live2DParameterMapping from '../live2d-parameter-mapping.vue'
 import ModelSettingsPreviewStage from '../preview-stage.vue'
 import ModelStrip from './model-strip.vue'
 import OptionSelect from './option-select.vue'
@@ -495,6 +496,7 @@ defineExpose({
             :options="motionDriverOptions"
           />
           <MagicMotionSettings v-if="live2dMotionDriver === 'magic'" />
+          <Live2DParameterMapping />
         </template>
 
         <template #expressions>

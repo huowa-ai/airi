@@ -8,7 +8,8 @@ import type { AiriCard, AiriExtension } from '../types/airiCard'
 import JSZip from 'jszip'
 
 import { exportToJSON } from '@proj-airi/ccc'
-import { array, literal, object, optional, parse, picklist, record, string, unknown as unknownSchema } from 'valibot'
+import { copyLive2DControlPolicy } from '@proj-airi/stage-ui-live2d/controls/policy'
+import { array, boolean, literal, number, object, optional, parse, picklist, record, string, unknown as unknownSchema } from 'valibot'
 
 import { wakeWordSchema } from '../libs/voice/wake-words'
 import { DisplayModelFormat } from '../stores/display-models'
@@ -26,6 +27,12 @@ const MODEL_EXT: Partial<Record<DisplayModelFormat, string>> = {
   [DisplayModelFormat.VRM]: 'vrm',
 }
 
+const parameterBindingSchema = object({
+  paramId: string(),
+  scale: optional(number()),
+  offset: optional(number()),
+})
+
 type DisplayModelsStore = ReturnType<typeof useDisplayModelsStore>
 type ShareableAiriCard = Card & { extensions: { airi: AiriExtension } }
 
@@ -41,6 +48,20 @@ const manifestSchema = object({
       controls: optional(object({
         disabledExpressions: array(string()),
         disabledMotions: array(string()),
+        parameterMapping: optional(object({
+          headAngleX: optional(array(parameterBindingSchema)),
+          headAngleY: optional(array(parameterBindingSchema)),
+          headAngleZ: optional(array(parameterBindingSchema)),
+          bodyAngleX: optional(array(parameterBindingSchema)),
+          bodyAngleY: optional(array(parameterBindingSchema)),
+          bodyAngleZ: optional(array(parameterBindingSchema)),
+          eyeBallX: optional(array(parameterBindingSchema)),
+          eyeBallY: optional(array(parameterBindingSchema)),
+          mouthOpen: optional(array(parameterBindingSchema)),
+          mouthForm: optional(array(parameterBindingSchema)),
+          breath: optional(array(parameterBindingSchema)),
+        })),
+        skipMouthOpen: optional(boolean()),
       })),
     }),
   })),
@@ -148,10 +169,7 @@ async function exportDisplayModel(card: AiriCard, store: DisplayModelsStore) {
       name: payload.file.name,
       path: `models/body-model.${modelExt}`,
       ...(avatarModel?.type === 'live2d'
-        ? { controls: {
-            disabledExpressions: [...avatarModel.config.controls.disabledExpressions],
-            disabledMotions: [...avatarModel.config.controls.disabledMotions],
-          } }
+        ? { controls: copyLive2DControlPolicy(avatarModel.config.controls) }
         : {}),
     },
   }
@@ -244,12 +262,8 @@ function sanitizeAiri(
   const artistry = isRecord(modules.artistry) ? modules.artistry : {}
   const speech = isRecord(modules.speech) ? modules.speech : {}
   const avatarModel = displayModel ? createAvatarModelReference(displayModel.id, displayModel.format) : undefined
-  if (avatarModel?.type === 'live2d' && controls) {
-    avatarModel.config.controls = {
-      disabledExpressions: [...controls.disabledExpressions],
-      disabledMotions: [...controls.disabledMotions],
-    }
-  }
+  if (avatarModel?.type === 'live2d' && controls)
+    avatarModel.config.controls = copyLive2DControlPolicy(controls)
 
   return {
     contextWindow: normalizeContextWindow(source.contextWindow),

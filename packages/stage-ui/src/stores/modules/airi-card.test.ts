@@ -751,6 +751,10 @@ describe('airi-card store', () => {
     await expect(cardStore.updateLive2DControlPolicy('default', avatarModelId!, {
       disabledExpressions: ['05_Angry'],
       disabledMotions: ['motions/哭哭.motion3.json'],
+      parameterMapping: {
+        headAngleX: [{ paramId: 'AngleX' }, { paramId: 'ParamAngleX', scale: 1 }],
+      },
+      skipMouthOpen: false,
     })).resolves.toBe(true)
 
     expect(cardStore.selectedAvatarModel).toMatchObject({
@@ -758,6 +762,10 @@ describe('airi-card store', () => {
         controls: {
           disabledExpressions: ['05_Angry'],
           disabledMotions: ['motions/哭哭.motion3.json'],
+          parameterMapping: {
+            headAngleX: [{ paramId: 'AngleX' }, { paramId: 'ParamAngleX', scale: 1 }],
+          },
+          skipMouthOpen: false,
         },
       },
     })

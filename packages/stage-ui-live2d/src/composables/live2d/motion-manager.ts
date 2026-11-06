@@ -2,12 +2,14 @@ import type { Cubism4InternalModel, InternalModel } from 'pixi-live2d-display/cu
 import type { Ref } from 'vue'
 
 import type { Live2DExpressionsContext } from '../../contexts/expressions'
+import type { Live2DResolvedParameterRig } from '../../controls/parameter-mapping'
 import type { Live2DBreathControlState, Live2DMotionControlState } from '../../stores/motion-control'
 import type { BeatSyncController } from './beat-sync'
 import type { Live2DFocusBiasController, Live2DFocusTarget } from './focus-bias'
 import type { Live2DMotionSpringController } from './motion-control-spring'
 import type { Live2DTouchReactionOffsets } from './touch'
 
+import { addLive2DParameter, defaultLive2DParameterRig, readLive2DParameter, writeLive2DParameter } from '../../controls/parameter-mapping'
 import { sampleLive2DBreath } from '../../stores/motion-control'
 import { useLive2DIdleEyeFocus } from './animation'
 import { live2DPoseAngleDegrees } from './focus-bias'
@@ -42,6 +44,8 @@ export type MotionManagerPluginContext = MotionManagerUpdateContext & {
   live2dForceIdleEyeAnimation: Ref<boolean>
   live2dAutoBlinkEnabled: Ref<boolean>
   live2dForceAutoBlinkEnabled: Ref<boolean>
+  /** Current parameter rig. Absent means the standard Cubism ids. */
+  parameterRig?: () => Live2DResolvedParameterRig
   isIdleMotion: boolean
   handled: boolean
   markHandled: () => void
@@ -50,6 +54,10 @@ export type MotionManagerPluginContext = MotionManagerUpdateContext & {
 export type MotionManagerPlugin = (ctx: MotionManagerPluginContext) => void
 
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value))
+
+function parameterRigOf(ctx: MotionManagerPluginContext): Live2DResolvedParameterRig {
+  return ctx.parameterRig?.() ?? defaultLive2DParameterRig
+}
 
 export interface UseLive2DMotionManagerUpdateOptions {
   internalModel: PixiLive2DInternalModel
@@ -62,6 +70,7 @@ export interface UseLive2DMotionManagerUpdateOptions {
   live2dAutoBlinkEnabled: Ref<boolean>
   live2dForceAutoBlinkEnabled: Ref<boolean>
   lastUpdateTime: Ref<number>
+  parameterRig?: () => Live2DResolvedParameterRig
 }
 
 /**
@@ -87,7 +96,7 @@ export function useMotionUpdatePluginBreathControl(
     const state = control.value
     if (!state.active) {
       if (activeOwnerId !== null)
-        ctx.model.setParameterValueById('ParamBreath', ctx.modelParameters.value.breath)
+        writeLive2DParameter(ctx.model, parameterRigOf(ctx), 'breath', ctx.modelParameters.value.breath)
       activeOwnerId = null
       return
     }
@@ -95,7 +104,7 @@ export function useMotionUpdatePluginBreathControl(
     activeOwnerId = state.ownerId
     const elapsedSeconds = Math.max(0, nowMs() - state.startedAtMs) / 1000
     const sample = sampleLive2DBreath(state.options, elapsedSeconds)
-    ctx.model.setParameterValueById('ParamBreath', sample.value)
+    writeLive2DParameter(ctx.model, parameterRigOf(ctx), 'breath', sample.value)
   }
 }
 
@@ -111,6 +120,7 @@ export function useLive2DMotionManagerUpdate(options: UseLive2DMotionManagerUpda
     live2dAutoBlinkEnabled,
     live2dForceAutoBlinkEnabled,
     lastUpdateTime,
+    parameterRig,
   } = options
 
   const prePlugins: MotionManagerPlugin[] = []
@@ -155,6 +165,7 @@ export function useLive2DMotionManagerUpdate(options: UseLive2DMotionManagerUpda
       live2dForceIdleEyeAnimation,
       live2dAutoBlinkEnabled,
       live2dForceAutoBlinkEnabled,
+      parameterRig,
       isIdleMotion,
       handled: false,
       markHandled: () => {
@@ -198,9 +209,10 @@ export function useMotionUpdatePluginBeatSync(beatSync: BeatSyncController): Mot
     const damping = 16 // Higher -> Less bounce
     const mass = 1
 
-    let paramAngleX = ctx.model.getParameterValueById('ParamAngleX') as number
-    let paramAngleY = ctx.model.getParameterValueById('ParamAngleY') as number
-    let paramAngleZ = ctx.model.getParameterValueById('ParamAngleZ') as number
+    const rig = parameterRigOf(ctx)
+    let paramAngleX = readLive2DParameter(ctx.model, rig, 'headAngleX')
+    let paramAngleY = readLive2DParameter(ctx.model, rig, 'headAngleY')
+    let paramAngleZ = readLive2DParameter(ctx.model, rig, 'headAngleZ')
 
     // X
     {
@@ -249,9 +261,9 @@ export function useMotionUpdatePluginBeatSync(beatSync: BeatSyncController): Mot
       }
     }
 
-    ctx.model.setParameterValueById('ParamAngleX', paramAngleX)
-    ctx.model.setParameterValueById('ParamAngleY', paramAngleY)
-    ctx.model.setParameterValueById('ParamAngleZ', paramAngleZ)
+    writeLive2DParameter(ctx.model, rig, 'headAngleX', paramAngleX)
+    writeLive2DParameter(ctx.model, rig, 'headAngleY', paramAngleY)
+    writeLive2DParameter(ctx.model, rig, 'headAngleZ', paramAngleZ)
   }
 }
 
@@ -736,19 +748,20 @@ export function useMotionUpdatePluginManualControl(
       return
 
     const { eyeX, eyeY, eyeSquint, headX, headY, headZ, bodyX, bodyY, bodyZ, mouthForm, mouthOpen } = output.pose
-    ctx.model.setParameterValueById('ParamEyeBallX', eyeX)
-    ctx.model.setParameterValueById('ParamEyeBallY', eyeY)
+    const rig = parameterRigOf(ctx)
+    writeLive2DParameter(ctx.model, rig, 'eyeBallX', eyeX)
+    writeLive2DParameter(ctx.model, rig, 'eyeBallY', eyeY)
     const remainingEyeOpen = 1 - eyeSquint
     ctx.model.setParameterValueById('ParamEyeLOpen', ctx.model.getParameterValueById('ParamEyeLOpen') * remainingEyeOpen)
     ctx.model.setParameterValueById('ParamEyeROpen', ctx.model.getParameterValueById('ParamEyeROpen') * remainingEyeOpen)
-    ctx.model.setParameterValueById('ParamAngleX', headX * live2DPoseAngleDegrees.head)
-    ctx.model.setParameterValueById('ParamAngleY', headY * live2DPoseAngleDegrees.head)
-    ctx.model.setParameterValueById('ParamAngleZ', headZ * live2DPoseAngleDegrees.head)
-    ctx.model.setParameterValueById('ParamBodyAngleX', bodyX * live2DPoseAngleDegrees.body)
-    ctx.model.setParameterValueById('ParamBodyAngleY', bodyY * live2DPoseAngleDegrees.body)
-    ctx.model.setParameterValueById('ParamBodyAngleZ', bodyZ * live2DPoseAngleDegrees.body)
-    ctx.model.setParameterValueById('ParamMouthForm', mouthForm)
-    ctx.model.setParameterValueById('ParamMouthOpenY', mouthOpen)
+    writeLive2DParameter(ctx.model, rig, 'headAngleX', headX * live2DPoseAngleDegrees.head)
+    writeLive2DParameter(ctx.model, rig, 'headAngleY', headY * live2DPoseAngleDegrees.head)
+    writeLive2DParameter(ctx.model, rig, 'headAngleZ', headZ * live2DPoseAngleDegrees.head)
+    writeLive2DParameter(ctx.model, rig, 'bodyAngleX', bodyX * live2DPoseAngleDegrees.body)
+    writeLive2DParameter(ctx.model, rig, 'bodyAngleY', bodyY * live2DPoseAngleDegrees.body)
+    writeLive2DParameter(ctx.model, rig, 'bodyAngleZ', bodyZ * live2DPoseAngleDegrees.body)
+    writeLive2DParameter(ctx.model, rig, 'mouthForm', mouthForm)
+    writeLive2DParameter(ctx.model, rig, 'mouthOpen', mouthOpen)
   }
 }
 
@@ -790,7 +803,7 @@ export function useMotionUpdatePluginLipSync(
       lastForcedValue = mouthOpenSize.value
       releaseRemainingMs = RELEASE_DURATION_MS
       handoffRemainingMs = HANDOFF_HOLD_MS
-      ctx.model.setParameterValueById('ParamMouthOpenY', mouthOpenSize.value)
+      writeLive2DParameter(ctx.model, parameterRigOf(ctx), 'mouthOpen', mouthOpenSize.value)
       return
     }
 
@@ -801,7 +814,7 @@ export function useMotionUpdatePluginLipSync(
         // idle frame. After the hold we stop owning the parameter and let
         // motion/expression plugins drive it again.
         handoffRemainingMs = Math.max(0, handoffRemainingMs - ctx.timeDelta * 1000)
-        ctx.model.setParameterValueById('ParamMouthOpenY', 0)
+        writeLive2DParameter(ctx.model, parameterRigOf(ctx), 'mouthOpen', 0)
       }
       return
     }
@@ -809,11 +822,12 @@ export function useMotionUpdatePluginLipSync(
     releaseRemainingMs = Math.max(0, releaseRemainingMs - ctx.timeDelta * 1000)
     const blend = smoothstep(1 - releaseRemainingMs / RELEASE_DURATION_MS)
 
-    // ParamMouthOpenY was already written by motion + expression plugins this frame.
-    const motionValue = ctx.model.getParameterValueById('ParamMouthOpenY') as number
+    // The mouth channel was already written by motion and expression plugins.
+    const rig = parameterRigOf(ctx)
+    const motionValue = readLive2DParameter(ctx.model, rig, 'mouthOpen')
     const blended = lastForcedValue * (1 - blend) + motionValue * blend
 
-    ctx.model.setParameterValueById('ParamMouthOpenY', blended)
+    writeLive2DParameter(ctx.model, rig, 'mouthOpen', blended)
   }
 }
 
@@ -828,16 +842,17 @@ export function useMotionUpdatePluginTouchReaction(
 ): MotionManagerPlugin {
   return (ctx) => {
     const offsets = sample(ctx.now)
+    const rig = parameterRigOf(ctx)
     if (offsets.angleX)
-      ctx.model.addParameterValueById('ParamAngleX', offsets.angleX)
+      addLive2DParameter(ctx.model, rig, 'headAngleX', offsets.angleX)
     if (offsets.angleY)
-      ctx.model.addParameterValueById('ParamAngleY', offsets.angleY)
+      addLive2DParameter(ctx.model, rig, 'headAngleY', offsets.angleY)
     if (offsets.angleZ)
-      ctx.model.addParameterValueById('ParamAngleZ', offsets.angleZ)
+      addLive2DParameter(ctx.model, rig, 'headAngleZ', offsets.angleZ)
     if (offsets.bodyAngleX)
-      ctx.model.addParameterValueById('ParamBodyAngleX', offsets.bodyAngleX)
+      addLive2DParameter(ctx.model, rig, 'bodyAngleX', offsets.bodyAngleX)
     if (offsets.bodyAngleY)
-      ctx.model.addParameterValueById('ParamBodyAngleY', offsets.bodyAngleY)
+      addLive2DParameter(ctx.model, rig, 'bodyAngleY', offsets.bodyAngleY)
     if (offsets.eyeSquint) {
       const remaining = 1 - offsets.eyeSquint
       ctx.model.setParameterValueById('ParamEyeLOpen', ctx.model.getParameterValueById('ParamEyeLOpen') * remaining)

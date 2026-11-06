@@ -1,7 +1,10 @@
 import type { InternalModel } from 'pixi-live2d-display/cubism4'
 
+import type { Live2DParameterWriter, Live2DResolvedParameterRig } from '../../controls/parameter-mapping'
+
 import { MathUtils } from 'three'
 
+import { defaultLive2DParameterRig, readLive2DParameter, writeLive2DParameter } from '../../controls/parameter-mapping'
 import { randomSaccadeInterval } from '../../utils/eye-motions'
 
 /**
@@ -9,7 +12,9 @@ import { randomSaccadeInterval } from '../../utils/eye-motions'
  * Not using any reactivity here as it's not yet needed.
  * Keeping it here as a composable for future extension.
  */
-export function useLive2DIdleEyeFocus() {
+export function useLive2DIdleEyeFocus(
+  parameterRig: () => Live2DResolvedParameterRig = () => defaultLive2DParameterRig,
+) {
   let nextSaccadeAfter = -1
   let focusTarget: [number, number] | undefined
   let lastSaccadeAt = -1
@@ -24,10 +29,12 @@ export function useLive2DIdleEyeFocus() {
     }
 
     model.focusController.update(now - lastSaccadeAt)
-    const coreModel = model.coreModel as any
-    // TODO: After emotion mapper, stage editor, eye related parameters should be take cared to be dynamical instead of hardcoding
-    coreModel.setParameterValueById('ParamEyeBallX', MathUtils.lerp(coreModel.getParameterValueById('ParamEyeBallX'), focusTarget![0], 0.3))
-    coreModel.setParameterValueById('ParamEyeBallY', MathUtils.lerp(coreModel.getParameterValueById('ParamEyeBallY'), focusTarget![1], 0.3))
+    const coreModel = model.coreModel as Live2DParameterWriter
+    const rig = parameterRig()
+    const nextX = MathUtils.lerp(readLive2DParameter(coreModel, rig, 'eyeBallX'), focusTarget![0], 0.3)
+    const nextY = MathUtils.lerp(readLive2DParameter(coreModel, rig, 'eyeBallY'), focusTarget![1], 0.3)
+    writeLive2DParameter(coreModel, rig, 'eyeBallX', nextX)
+    writeLive2DParameter(coreModel, rig, 'eyeBallY', nextY)
   }
 
   return { update }

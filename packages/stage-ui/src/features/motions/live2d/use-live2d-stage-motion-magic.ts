@@ -1,9 +1,10 @@
 import type { MaybeRefOrGetter } from 'vue'
 
-import { defaultLive2DMotionControlDynamics, useLive2DMotionControl } from '@proj-airi/stage-ui-live2d'
+import { defaultLive2DMotionControlDynamics, resolveLive2DParameterRig, resolveLive2DSkipMouthOpen, useLive2DMotionControl, useLive2DParameterRig } from '@proj-airi/stage-ui-live2d'
 import { storeToRefs } from 'pinia'
 import { computed, onScopeDispose, toValue, watch } from 'vue'
 
+import { useAiriCardStore } from '../../../stores/modules/airi-card'
 import { live2dMotionMagicProfiles } from './profiles'
 import { useLive2DMotionMagicSettings } from './settings'
 import { useLive2DMotionSpeechActivity } from './speech-activity'
@@ -43,6 +44,15 @@ export function useLive2DStageMotionMagic(options: {
     skipMouthOpen,
     speakingProfileId,
   } = storeToRefs(useLive2DMotionMagicSettings())
+  const { selectedAvatarModel } = storeToRefs(useAiriCardStore())
+  const { catalog } = storeToRefs(useLive2DParameterRig())
+  const live2dControls = computed(() => selectedAvatarModel.value?.type === 'live2d'
+    ? selectedAvatarModel.value.config.controls
+    : undefined)
+  const mouthOpenMapped = computed(() => resolveLive2DParameterRig(
+    live2dControls.value?.parameterMapping,
+    catalog.value,
+  ).channels.mouthOpen.layer !== 'default')
   const speechActivity = useLive2DMotionSpeechActivity()
   const profileId = computed(() => followSpeech.value && speechActivity.value === 'speaking'
     ? speakingProfileId.value
@@ -56,7 +66,11 @@ export function useLive2DStageMotionMagic(options: {
       ? live2dMotionMagicSpeakingTransitionMs
       : live2dMotionMagicIdleTransitionMs,
     forceViewTarget,
-    skipMouthOpen,
+    skipMouthOpen: () => resolveLive2DSkipMouthOpen({
+      globalSkip: skipMouthOpen.value,
+      cardSkip: live2dControls.value?.skipMouthOpen,
+      mouthOpenMapped: mouthOpenMapped.value,
+    }),
     disabled: () => exclusiveOwnerId.value !== null,
     publishPose: pose => motionControl.setPose(ownerId, pose, defaultLive2DMotionControlDynamics, localDelivery),
     releasePose: () => motionControl.release(ownerId, localDelivery),

@@ -12,6 +12,7 @@ import { useI18n } from 'vue-i18n'
 
 import MagicMotionSettings from '../../../../features/motions/live2d/components/magic-settings.vue'
 import Live2DExpressionList from './live2d-expression-list.vue'
+import Live2DParameterMapping from './live2d-parameter-mapping.vue'
 
 import { PropertyPoint } from '../../../data-pane'
 import { Section } from '../../../layouts'
@@ -648,6 +649,19 @@ const blinkModeOptions = computed(() => [
         </div>
       </template>
     </FieldRange>
+  </Section>
+  <Section
+    :title="t('settings.live2d.parameters.mapping.title')"
+    icon="i-solar:tuning-square-2-bold-duotone"
+    :class="[
+      'rounded-xl',
+      'bg-white/80  dark:bg-black/75',
+      'backdrop-blur-lg',
+    ]"
+    size="sm"
+    :expand="false"
+  >
+    <Live2DParameterMapping />
   </Section>
   <Section
     :title="t('settings.live2d.expressions.title')"

@@ -36,7 +36,10 @@ const emit = defineEmits<{
 
 const settingsStore = useSettings()
 const modelStore = useModelStore()
-const { activeCardId, selectedAvatarModelId } = storeToRefs(useAiriCardStore())
+const { activeCardId, selectedAvatarModel, selectedAvatarModelId } = storeToRefs(useAiriCardStore())
+const live2dParameterMapping = computed(() => selectedAvatarModel.value?.type === 'live2d'
+  ? selectedAvatarModel.value.config.controls.parameterMapping
+  : undefined)
 useSharedLive2DExpressionPreview(props.live2dContext, activeCardId, selectedAvatarModelId)
 const live2dSceneRef = ref<{ canvasElement: () => HTMLCanvasElement | undefined }>()
 const vrmSceneRef = ref<{ canvasElement: () => HTMLCanvasElement | undefined }>()
@@ -224,6 +227,7 @@ const cursorPosition = computed(() => ({
         :context="live2dContext"
         :model-src="stageModelSelectedUrl"
         :model-id="stageModelSelected"
+        :parameter-mapping="live2dParameterMapping"
         :cursor-position="cursorPosition"
         :theme-colors-hue="themeColorsHue"
         :theme-colors-hue-dynamic="themeColorsHueDynamic"

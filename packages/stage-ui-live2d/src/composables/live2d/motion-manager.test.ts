@@ -4,6 +4,7 @@ import type { MotionManagerPluginContext, PixiLive2DInternalModel } from './moti
 import { describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
+import { resolveLive2DParameterRig } from '../../controls/parameter-mapping'
 import { neutralLive2DMotionControlPose } from '../../stores/motion-control'
 import { createLive2DFocusBias } from './focus-bias'
 import { createLive2DMotionSpring } from './motion-control-spring'
@@ -314,6 +315,28 @@ describe('live2d motion manager plugins', () => {
     expect(context.model.getParameterValueById('ParamBodyAngleY')).toBeCloseTo(7.5)
     expect(context.model.getParameterValueById('ParamBodyAngleZ')).toBeCloseTo(10)
     expect(context.model.getParameterValueById('ParamMouthForm')).toBeCloseTo(-0.25)
+  })
+
+  it('writes each parameter bound to the head channel', () => {
+    const context = createContext({
+      timeDelta: 1 / 60,
+      parameterRig: () => resolveLive2DParameterRig({
+        headAngleX: [{ paramId: 'ParamAngleX' }, { paramId: 'AngleX', scale: 2 }],
+      }),
+    })
+    const spring = createLive2DMotionSpring()
+    const plugin = useMotionUpdatePluginManualControl(ref({
+      active: true,
+      ownerId: 'motion-devtool',
+      pose: { ...neutralLive2DMotionControlPose, headX: 0.5 },
+      dynamics: { follow: 1, inertia: 0 },
+    }), spring)
+
+    for (let frame = 0; frame < 120; frame += 1)
+      plugin(context)
+
+    expect(context.model.getParameterValueById('ParamAngleX')).toBeCloseTo(15)
+    expect(context.model.getParameterValueById('AngleX')).toBeCloseTo(30)
   })
 
   it('biases a manual pose toward the focus target and back after it goes away', () => {

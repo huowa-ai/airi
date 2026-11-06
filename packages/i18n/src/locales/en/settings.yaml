@@ -277,6 +277,41 @@ live2d:
         unlimited: ∞
     shadow: Drop shadow
     reset-parameters: Reset to default parameters
+    mapping:
+      title: Parameter mapping
+      description: AIRI writes these channels. A card mapping wins. Model structure comes next. A parameter name is the last source.
+      layer:
+        card: Card
+        structural: Structure
+        name: Name
+        default: Default
+      columns:
+        parameter: Parameter
+        scale: Scale
+        offset: Offset
+      actions:
+        test: Test
+        add: Add parameter
+        remove: Remove
+        reset: Use detected mapping
+      skip-mouth:
+        title: Mouth opening for this model
+        description: Auto follows the global setting. Auto drives the mouth when this model maps mouth open.
+        auto: Auto
+        skip: Skip
+        drive: Drive mouth
+      channels:
+        head-angle-x: Head angle X
+        head-angle-y: Head angle Y
+        head-angle-z: Head angle Z
+        body-angle-x: Body angle X
+        body-angle-y: Body angle Y
+        body-angle-z: Body angle Z
+        eye-ball-x: Eye X
+        eye-ball-y: Eye Y
+        mouth-open: Mouth open
+        mouth-form: Mouth form
+        breath: Breath
   clear-model-cache: Clear model cache
   expressions:
     title: Expressions

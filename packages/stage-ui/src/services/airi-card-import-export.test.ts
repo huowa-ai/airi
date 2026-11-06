@@ -74,6 +74,11 @@ describe('airi card package import/export', () => {
       config: { controls: {
         disabledExpressions: ['smile'],
         disabledMotions: ['motions/idle.motion3.json'],
+        parameterMapping: {
+          headAngleX: [{ paramId: 'ParamAngleX' }, { paramId: 'AngleX', scale: 1 }],
+          mouthOpen: [{ paramId: 'ParamMouthOpenY' }],
+        },
+        skipMouthOpen: false,
       } },
     }]
     vi.spyOn(displayModelsStore, 'getDisplayModel').mockResolvedValue({
@@ -92,6 +97,11 @@ describe('airi card package import/export', () => {
       resources: { displayModel: { controls: {
         disabledExpressions: ['smile'],
         disabledMotions: ['motions/idle.motion3.json'],
+        parameterMapping: {
+          headAngleX: [{ paramId: 'ParamAngleX' }, { paramId: 'AngleX', scale: 1 }],
+          mouthOpen: [{ paramId: 'ParamMouthOpenY' }],
+        },
+        skipMouthOpen: false,
       } } },
     })
     expect(airiFrom(await readJson<ccv3.CharacterCardV3>(zip, 'card.json')).avatarModels).toEqual([])
@@ -103,6 +113,11 @@ describe('airi card package import/export', () => {
       config: { controls: {
         disabledExpressions: ['smile'],
         disabledMotions: ['motions/idle.motion3.json'],
+        parameterMapping: {
+          headAngleX: [{ paramId: 'ParamAngleX' }, { paramId: 'AngleX', scale: 1 }],
+          mouthOpen: [{ paramId: 'ParamMouthOpenY' }],
+        },
+        skipMouthOpen: false,
       } },
     })
     expect(airiFrom(imported).avatarModels[0].id).not.toBe('selected-avatar-model')

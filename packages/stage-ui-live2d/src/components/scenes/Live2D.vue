@@ -3,6 +3,7 @@ import type { PresenceBubbleState } from '@proj-airi/stage-shared'
 
 import type { Live2DEyeFocusSource, Live2DTouch } from '../../composables/live2d'
 import type { Live2DContext } from '../../contexts/live2d'
+import type { Live2DParameterMapping } from '../../controls/parameter-mapping'
 
 import { presenceBubbleIdle } from '@proj-airi/stage-shared'
 import { useScreenAmbientLightEnvironment, useSettingsScreenAmbientLight } from '@proj-airi/stage-shared/stores/screen-ambient-light'
@@ -27,6 +28,8 @@ const props = withDefaults(defineProps<{
   context?: Live2DContext
   modelSrc?: string
   modelId?: string
+  /** Card mapping for the selected Live2D avatar model. */
+  parameterMapping?: Live2DParameterMapping
   /** Scene painted inside the canvas, behind the model. */
   backgroundUrl?: string | null
 
@@ -256,6 +259,7 @@ defineExpose({
         v-model:state="componentStateModel"
         :model-src="modelSrc"
         :model-id="modelId"
+        :parameter-mapping="parameterMapping"
         :app="app"
         :mouth-open-size="mouthOpenSize"
         :now-speaking="nowSpeaking"
