@@ -24,6 +24,7 @@ import { computed, shallowRef, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { getConversationAnalyticsSurface } from '../composables'
+import { waitForCallRecall } from '../composables/call/turn'
 import { useAiriRuntimePrompt } from '../composables/use-airi-runtime-prompt'
 import { getTraceSink, LOCAL_AGENT_ACTOR } from '../composables/use-trace'
 import { useChatVision } from '../composables/vision/use-chat-vision'
@@ -1172,6 +1173,16 @@ export const useChatStore = defineStore('chat', () => {
 
   runtime.hooks.onBeforeMessageComposed(async (message, context) => {
     try {
+      // A call turn recalls here, and speaks a filler when that recall is slow.
+      // The model starts only after this hook returns.
+      const handled = await waitForCallRecall({
+        sessionId: context.sessionId,
+        turnId: context.turnId,
+        message,
+        speaks: context.speaks === true,
+      })
+      if (handled)
+        return
       const binding = chatSession.sessionMetas[context.sessionId]?.bindings?.[0]
       await memory.prepareRecall({
         sessionId: context.sessionId,
