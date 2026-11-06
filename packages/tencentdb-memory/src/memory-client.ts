@@ -1,5 +1,6 @@
 import type { GenericSchema } from 'valibot'
 
+import type { CallSource } from './call-header'
 import type { MemoryClientConfig } from './client-config'
 
 import {
@@ -44,6 +45,16 @@ export interface AddConversationInput extends MemoryCallScope {
   messages: ConversationMessageInput[]
   /** Replaces the config agent id for this call. */
   agentId?: string
+  /**
+   * One UUID for the call.
+   * `appendConversation` writes it into the content header. The gateway body does not send it.
+   */
+  callId?: string
+  /**
+   * `voice`, `video`, or `text`. A typed turn uses `text`.
+   * `appendConversation` writes it into the content header. The gateway body does not send it.
+   */
+  source?: CallSource
 }
 
 export interface AddConversationResult {

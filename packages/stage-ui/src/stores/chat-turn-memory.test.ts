@@ -50,6 +50,7 @@ describe('completed chat turn capture', () => {
       timestamp: expect.any(String),
       interrupted: false,
       failed: false,
+      source: 'text',
     }])
   })
 

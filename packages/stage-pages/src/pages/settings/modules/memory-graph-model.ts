@@ -4,14 +4,19 @@ export type MemoryGraphStatus = 'off' | 'loading' | 'error' | 'ready'
 export type MemoryGraphLayer = 'L0' | 'L1' | 'L2' | 'L3'
 export type MemoryGraphKind = 'fact' | 'atom' | 'scene' | 'core'
 export type MemoryGraphScope = 'user' | 'team-agent'
+export type MemoryGraphCallSource = 'voice' | 'video' | 'text'
 
 export interface MemoryGraphFact {
   id: string
   description: string
   body: string
   persona?: string
-  updatedAt: number
+  updatedAt?: number
   provenance?: unknown
+  /** Set on a chat row. A manual fact omits it. */
+  origin?: 'turn'
+  callId?: string
+  source?: MemoryGraphCallSource
 }
 
 export interface MemoryGraphAtom {
@@ -52,6 +57,8 @@ export interface MemoryGraphNode {
   x: number
   y: number
   z: number
+  callId?: string
+  source?: MemoryGraphCallSource
 }
 
 /** A line the view draws so the records sit in one picture. It is not a stored relation. */
@@ -82,6 +89,15 @@ export interface MemoryGraphDetail {
   summary?: string
   updatedAt?: number
   sections: readonly MemoryGraphSection[]
+  callId?: string
+  source?: MemoryGraphCallSource
+  /** False for a call turn. Fact delete does not own that row. */
+  removable?: boolean
+}
+
+export interface MemoryGraphCallFilter {
+  callId?: string
+  source?: MemoryGraphCallSource
 }
 
 export interface MemoryGraphModel {
@@ -149,19 +165,22 @@ export function buildMemoryGraph(input: {
     }
   }
 
-  const facts = [...input.facts].sort((left, right) => left.updatedAt - right.updatedAt || left.id.localeCompare(right.id))
+  const facts = [...input.facts].sort((left, right) => (left.updatedAt ?? 0) - (right.updatedAt ?? 0) || left.id.localeCompare(right.id))
   const atoms = [...(input.atoms ?? NO_ATOMS)].sort((left, right) => (left.updatedAt ?? 0) - (right.updatedAt ?? 0) || left.id.localeCompare(right.id))
   const scenes = [...(input.scenes ?? NO_SCENES)].sort((left, right) => left.path.localeCompare(right.path))
   const cores = [...(input.cores ?? NO_CORES)].sort((left, right) => (left.persona ?? '').localeCompare(right.persona ?? ''))
   const layered = atoms.length + scenes.length + cores.length > 0
 
-  const factNodes = facts.map((fact, index) => node({
-    id: fact.id,
-    label: fact.description.trim() || fact.body.trim() || fact.id,
-    layer: 'L0',
-    kind: 'fact',
-    scope: 'user',
-    point: layered ? tailPoint(index, facts.length) : whalePoint(index, facts.length),
+  const factNodes = facts.map((fact, index) => ({
+    ...node({
+      id: fact.id,
+      label: fact.description.trim() || fact.body.trim() || fact.id,
+      layer: 'L0',
+      kind: 'fact',
+      scope: 'user',
+      point: layered ? tailPoint(index, facts.length) : whalePoint(index, facts.length),
+    }),
+    ...callFields(fact),
   }))
   const atomNodes = atoms.map((atom, index) => node({
     id: `l1:${atom.persona ?? 'general'}:${atom.id}`,
@@ -198,7 +217,9 @@ export function buildMemoryGraph(input: {
       scope: 'user',
       persona: fact.persona,
       body: fact.body,
-      updatedAt: fact.updatedAt,
+      ...(fact.updatedAt === undefined ? {} : { updatedAt: fact.updatedAt }),
+      ...callFields(fact),
+      ...(fact.origin === 'turn' ? { removable: false } : {}),
     })),
     ...atoms.map(atom => detail({
       id: `l1:${atom.persona ?? 'general'}:${atom.id}`,
@@ -247,6 +268,70 @@ export function buildMemoryGraph(input: {
     legend: (['L0', 'L1', 'L2', 'L3'] as const).filter(layer => nodes.some(item => item.layer === layer)),
     layerErrors,
     truncatedLayers,
+  }
+}
+
+/**
+ * One tagged chat row as an L0 fact.
+ * The body is already free of the call header.
+ */
+export function callTurnFact(turn: {
+  id: string
+  body: string
+  persona?: string
+  callId?: string
+  source?: MemoryGraphCallSource
+  sessionId?: string
+}): MemoryGraphFact {
+  const body = turn.body.trim()
+  const description = body.split('\n').map(line => line.trim()).find(Boolean)?.slice(0, 80) || turn.id
+  return {
+    id: `turn:${turn.id}`,
+    description,
+    body,
+    origin: 'turn',
+    ...(turn.persona ? { persona: turn.persona } : {}),
+    ...(turn.callId ? { callId: turn.callId } : {}),
+    ...(turn.source ? { source: turn.source } : {}),
+    ...(turn.sessionId ? { provenance: { sessionId: turn.sessionId, assetRefs: [] } } : {}),
+  }
+}
+
+/**
+ * Keeps L0 rows that match the call id and the source.
+ * L1, L2, and L3 stay. An empty filter returns the same model.
+ * An L0 row with no call id and no source is hidden while a filter is set.
+ */
+export function filterMemoryGraph(model: MemoryGraphModel, filter: MemoryGraphCallFilter): MemoryGraphModel {
+  const callId = filter.callId?.trim() ?? ''
+  const source = filter.source
+  if (model.status !== 'ready' || (!callId && !source))
+    return model
+  const nodes = model.nodes.filter(item => item.layer !== 'L0' || matchesCall(item, callId, source))
+  const ids = new Set(nodes.map(item => item.id))
+  return {
+    ...model,
+    nodes,
+    links: derivedLinks(nodes),
+    details: model.details.filter(item => ids.has(item.id)),
+    legend: (['L0', 'L1', 'L2', 'L3'] as const).filter(layer => nodes.some(item => item.layer === layer)),
+  }
+}
+
+function matchesCall(node: MemoryGraphNode, callId: string, source: MemoryGraphCallSource | undefined) {
+  if (!node.callId && !node.source)
+    return false
+  if (callId && node.callId !== callId)
+    return false
+  if (source && node.source !== source)
+    return false
+  return true
+}
+
+function callFields(fact: MemoryGraphFact) {
+  return {
+    ...(fact.callId ? { callId: fact.callId } : {}),
+    ...(fact.source ? { source: fact.source } : {}),
   }
 }
 
@@ -412,6 +497,9 @@ function detail(input: {
   recordId?: string
   summary?: string
   updatedAt?: number
+  callId?: string
+  source?: MemoryGraphCallSource
+  removable?: boolean
   sections?: readonly MemoryGraphSection[]
 }): MemoryGraphDetail {
   return {
@@ -428,6 +516,9 @@ function detail(input: {
     ...(input.recordId ? { recordId: input.recordId } : {}),
     ...(input.summary ? { summary: input.summary } : {}),
     ...(input.updatedAt === undefined ? {} : { updatedAt: input.updatedAt }),
+    ...(input.callId ? { callId: input.callId } : {}),
+    ...(input.source ? { source: input.source } : {}),
+    ...(input.removable === undefined ? {} : { removable: input.removable }),
     sections: input.sections ?? [],
   }
 }

@@ -5,6 +5,7 @@ import type { ChatHistoryReplyPayload } from '../reply'
 import type { ChatToolCallRendererRegistry, ChatToolCallWidgetRegistry } from './tool-call-renderer'
 
 import { isStageCapacitor, isStageWeb } from '@proj-airi/stage-shared'
+import { projectCallContent } from '@proj-airi/tencentdb-memory'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -59,21 +60,19 @@ const emit = defineEmits<{
 const { t } = useI18n()
 
 const resolvedSlices = computed<ChatSlices[]>(() => {
+  let slices: ChatSlices[] = []
   if (props.message.slices?.length) {
-    return props.message.slices
+    slices = props.message.slices
   }
-
-  if (typeof props.message.content === 'string' && props.message.content.trim()) {
-    return [{ type: 'text', text: props.message.content } satisfies ChatSlicesText]
+  else if (typeof props.message.content === 'string' && props.message.content.trim()) {
+    slices = [{ type: 'text', text: props.message.content } satisfies ChatSlicesText]
   }
-
-  if (Array.isArray(props.message.content)) {
+  else if (Array.isArray(props.message.content)) {
     const textPart = props.message.content.find(part => 'type' in part && part.type === 'text') as { text?: string } | undefined
     if (textPart?.text)
-      return [{ type: 'text', text: textPart.text } satisfies ChatSlicesText]
+      slices = [{ type: 'text', text: textPart.text } satisfies ChatSlicesText]
   }
-
-  return []
+  return slices.map(slice => slice.type === 'text' ? { ...slice, text: projectCallContent(slice.text) } : slice)
 })
 
 const toolResultBySlice = computed(() => {

@@ -1,3 +1,5 @@
+import { projectCallContent } from './call-header'
+
 /**
  * Recall limits for one query.
  * `limit` is the maximum number of hits. `maxChars` is the maximum text length.
@@ -98,9 +100,9 @@ export function mergeRecall(input: {
 }): RecallHit[] {
   const limit = input.budget?.limit ?? defaultRecallBudget.limit
   const maxChars = input.budget?.maxChars ?? defaultRecallBudget.maxChars
-  const remoteText = input.remote.map(hit => normalizeRecallText(hit.text))
+  const remoteText = input.remote.map(hit => normalizeRecallText(projectCallContent(hit.text)))
   const recentHits = input.recent.flatMap((turn) => {
-    const text = turn.text.trim()
+    const text = projectCallContent(turn.text).trim()
     if (text === '')
       return []
     const key = normalizeRecallText(text)
@@ -127,7 +129,8 @@ export function mergeRecall(input: {
     if (used >= maxChars)
       break
     const room = maxChars - used
-    const text = hit.text.length <= room ? hit.text : hit.text.slice(0, room)
+    const plain = projectCallContent(hit.text)
+    const text = plain.length <= room ? plain : plain.slice(0, room)
     if (text === '')
       continue
     chosen.push({ ...hit, text })
@@ -139,7 +142,8 @@ export function mergeRecall(input: {
 export function formatRecall(hits: readonly RecallHit[]) {
   if (hits.length === 0)
     return ''
-  return ['Recent memory:', ...hits.map(hit => `- ${hit.text}`)].join('\n')
+  // The model prompt and the recall text use the body. The call header stays out.
+  return ['Recent memory:', ...hits.map(hit => `- ${projectCallContent(hit.text)}`)].join('\n')
 }
 
 function samePlace(item: RecentTurn, agentId: string, sessionId: string, place?: RecallPlace) {

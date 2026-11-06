@@ -1,4 +1,4 @@
-import type { MemoryLayerSnapshot } from '@proj-airi/tencentdb-memory'
+import type { CallTurnRecord, MemoryLayerSnapshot } from '@proj-airi/tencentdb-memory'
 
 import { GENERAL_AGENT_ID } from '@proj-airi/tencentdb-memory'
 
@@ -32,6 +32,16 @@ export interface MemoryCoreView {
   updatedAt?: number
 }
 
+/** One tagged L0 chat row. The body has the call header removed. */
+export interface MemoryCallTurn {
+  id: string
+  body: string
+  persona?: string
+  callId?: string
+  source?: 'voice' | 'video' | 'text'
+  sessionId?: string
+}
+
 /** L1–L3 rows for the graph. L2 and L3 follow the resolved team and the character. */
 export interface MemoryLayerView {
   atoms: MemoryLayerItemState<MemoryAtomView>
@@ -55,6 +65,18 @@ export const EMPTY_MEMORY_LAYERS: MemoryLayerView = {
  * Maps a MemoryCore layer snapshot onto character ids the graph can label.
  * `airi:general` has no persona. Any other agent id is the character card id.
  */
+/** Maps a tagged L0 row onto a character id the graph can label. */
+export function viewCallTurn(record: CallTurnRecord): MemoryCallTurn {
+  return {
+    id: record.id,
+    body: record.body,
+    ...personaField(record.agentId),
+    ...(record.callId ? { callId: record.callId } : {}),
+    ...(record.source ? { source: record.source } : {}),
+    ...(record.sessionId ? { sessionId: record.sessionId } : {}),
+  }
+}
+
 export function viewMemoryLayers(snapshot: MemoryLayerSnapshot): MemoryLayerView {
   return {
     atoms: {

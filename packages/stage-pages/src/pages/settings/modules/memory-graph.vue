@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import type { MemoryGraphFact, MemoryGraphLayer } from './memory-graph-model'
+import type { MemoryGraphCallSource, MemoryGraphFact, MemoryGraphLayer } from './memory-graph-model'
 
 import { useMemoryStore } from '@proj-airi/stage-ui/stores/memory'
 import { useAiriCardStore } from '@proj-airi/stage-ui/stores/modules/airi-card'
-import { Alert } from '@proj-airi/ui'
+import { Alert, FieldInput, FieldSelect } from '@proj-airi/ui'
 import { usePreferredReducedMotion } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
 import { computed, ref, watch } from 'vue'
@@ -11,14 +11,16 @@ import { useI18n } from 'vue-i18n'
 
 import MemoryGraphView from './components/memory-graph-view.vue'
 
-import { buildMemoryGraph, memoryLayerColor, readMemoryGraphSource } from './memory-graph-model'
+import { buildMemoryGraph, callTurnFact, filterMemoryGraph, memoryLayerColor, readMemoryGraphSource } from './memory-graph-model'
 
 const { t } = useI18n()
 const memory = useMemoryStore()
-const { serviceRead, serviceError, layers, scope } = storeToRefs(memory)
+const { serviceRead, serviceError, layers, scope, callTurns } = storeToRefs(memory)
 const { cards } = storeToRefs(useAiriCardStore())
 const reducedMotion = usePreferredReducedMotion()
 const selectedId = ref('')
+const sourceFilter = ref<'all' | MemoryGraphCallSource>('all')
+const callIdFilter = ref('')
 const graphUnavailable = ref(false)
 const confirmDelete = ref(false)
 const deleteNote = ref('')
@@ -30,13 +32,27 @@ watch(selectedId, () => {
 const KEY = 'settings.pages.modules.memory-long-term.graph'
 const UNKNOWN = 'settings.pages.modules.memory-long-term.unknown-character'
 
-const model = computed(() => {
+const sourceOptions = computed(() => [
+  { value: 'all' as const, label: t(`${KEY}.filter-source-all`) },
+  { value: 'text' as const, label: t(`${KEY}.sources.text`) },
+  { value: 'voice' as const, label: t(`${KEY}.sources.voice`) },
+  { value: 'video' as const, label: t(`${KEY}.sources.video`) },
+])
+
+watch(() => [...cards.value.keys()], (ids) => {
+  memory.includeCallAgents(ids)
+}, { immediate: true })
+
+const built = computed(() => {
   const ready = serviceRead.value === 'ready'
   const snapshot = layers.value
   return buildMemoryGraph({
     serviceRead: serviceRead.value,
     serviceError: serviceError.value,
-    facts: memory.listFacts(),
+    facts: [
+      ...memory.listFacts(),
+      ...callTurns.value.map(callTurnFact),
+    ],
     atoms: ready ? snapshot.atoms.items : [],
     scenes: ready ? snapshot.scenes.items : [],
     cores: ready ? snapshot.cores.items : [],
@@ -57,6 +73,11 @@ const model = computed(() => {
   })
 })
 
+const model = computed(() => filterMemoryGraph(built.value, {
+  ...(callIdFilter.value.trim() ? { callId: callIdFilter.value.trim() } : {}),
+  ...(sourceFilter.value === 'all' ? {} : { source: sourceFilter.value }),
+}))
+
 const listNodes = computed(() => {
   const rank: Record<MemoryGraphLayer, number> = { L3: 0, L2: 1, L1: 2, L0: 3 }
   return [...model.value.nodes].sort((left, right) => rank[left.layer] - rank[right.layer] || left.label.localeCompare(right.label))
@@ -66,10 +87,14 @@ const showGraph = computed(() => reducedMotion.value !== 'reduce' && model.value
 const showScope = computed(() => model.value.legend.includes('L2') || model.value.legend.includes('L3'))
 
 const selected = computed(() => model.value.details.find(entry => entry.id === selectedId.value))
+const listedFacts = computed(() => [
+  ...memory.listFacts(),
+  ...callTurns.value.map(callTurnFact),
+])
 const selectedFact = computed(() => {
   if (selected.value?.kind !== 'fact')
     return undefined
-  return memory.listFacts().find(entry => entry.id === selected.value?.id)
+  return listedFacts.value.find(entry => entry.id === selected.value?.id)
 })
 const selectedSource = computed(() => readMemoryGraphSource(sourceOf(selectedFact.value)))
 
@@ -126,6 +151,14 @@ function layerLabel(layer: MemoryGraphLayer) {
   return t(`${KEY}.layers.${layer.toLowerCase()}`)
 }
 
+function sourceLabel(source: MemoryGraphCallSource) {
+  if (source === 'voice')
+    return t(`${KEY}.sources.voice`)
+  if (source === 'video')
+    return t(`${KEY}.sources.video`)
+  return t(`${KEY}.sources.text`)
+}
+
 function typeLabel(type: string | undefined) {
   if (type === 'episodic' || type === 'persona' || type === 'instruction')
     return t(`${KEY}.types.${type}`)
@@ -149,9 +182,23 @@ function typeLabel(type: string | undefined) {
     <Alert v-else-if="serviceError" tone="danger" :title="t(`${KEY}.error-title`)">
       {{ serviceError }}
     </Alert>
-    <Alert v-else-if="model.nodes.length === 0" tone="info" :title="t(`${KEY}.empty-title`)">
+    <Alert v-else-if="built.nodes.length === 0" tone="info" :title="t(`${KEY}.empty-title`)">
       {{ t(`${KEY}.empty`) }}
     </Alert>
+
+    <div :class="['grid gap-3', 'md:grid-cols-2']">
+      <FieldSelect
+        v-model="sourceFilter"
+        layout="vertical"
+        :label="t(`${KEY}.filter-source`)"
+        :options="sourceOptions"
+      />
+      <FieldInput
+        v-model="callIdFilter"
+        :label="t(`${KEY}.filter-call`)"
+        :placeholder="t(`${KEY}.filter-call-placeholder`)"
+      />
+    </div>
 
     <div :class="['grid gap-4', 'items-start', 'lg:grid-cols-[minmax(0,1.4fr)_minmax(16rem,0.8fr)]']">
       <section :class="['flex flex-col', 'gap-3', 'self-start', 'rounded-xl', 'bg-neutral-950', 'p-4', 'text-neutral-100']" :aria-label="t(`${KEY}.canvas-label`, { count: model.nodes.length, lines: model.links.length })">
@@ -265,6 +312,20 @@ function typeLabel(type: string | undefined) {
               </dt>
               <dd>{{ new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(selected.updatedAt) }}</dd>
             </template>
+            <template v-if="selected.callId">
+              <dt :class="['text-neutral-500 dark:text-neutral-400']">
+                {{ t(`${KEY}.call`) }}
+              </dt>
+              <dd :class="['break-words']">
+                {{ selected.callId }}
+              </dd>
+            </template>
+            <template v-if="selected.source">
+              <dt :class="['text-neutral-500 dark:text-neutral-400']">
+                {{ t(`${KEY}.turn-source`) }}
+              </dt>
+              <dd>{{ sourceLabel(selected.source) }}</dd>
+            </template>
             <template v-if="selected.kind === 'fact'">
               <dt :class="['text-neutral-500 dark:text-neutral-400']">
                 {{ t(`${KEY}.source`) }}
@@ -284,7 +345,7 @@ function typeLabel(type: string | undefined) {
           <p v-if="selected.layer === 'L3'" :class="['text-sm', 'text-neutral-500 dark:text-neutral-400']">
             {{ t(`${KEY}.delete-l3`) }}
           </p>
-          <div v-else :class="['flex flex-wrap', 'gap-2']">
+          <div v-else-if="selected.removable !== false" :class="['flex flex-wrap', 'gap-2']">
             <button
               v-if="!confirmDelete"
               type="button"

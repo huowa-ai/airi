@@ -1,5 +1,7 @@
+import type { CallSource } from './call-header'
 import type { AddConversationInput, ConversationMessageInput, MemoryV3Client } from './memory-client'
 
+import { callHeaderLine, prefixCallHeader, projectCallContent } from './call-header'
 import { appendConversation } from './conversation-write'
 
 /** MemoryCore rejects conversation content longer than this. The v3 catalog limit is 8192. */
@@ -43,6 +45,10 @@ export interface ChatTurnInput {
    */
   interrupted?: boolean
   failed?: boolean
+  /** One UUID for the call. Absent when the turn is not part of a call. */
+  callId?: string
+  /** `voice`, `video`, or `text`. A typed turn uses `text`. */
+  source?: CallSource
 }
 
 export type ChatTurnDecision
@@ -55,6 +61,7 @@ export type ChatTurnDecision
  * An interrupted turn is stored when assistant text already played, including a played filler.
  * An interrupted turn with no played text is skipped.
  * A failed turn is skipped.
+ * A call id or a source is written as the content header on each message.
  * Filler and duplicates stay with the MemoryCore L1 prompt.
  *
  * @example
@@ -65,18 +72,21 @@ export function decideChatTurn(input: ChatTurnInput): ChatTurnDecision {
   if (input.failed)
     return { action: 'skip', reason: 'failed' }
 
-  const userText = clip(sanitizeTurnText(input.userText, input.systemPrompt))
-  const assistantText = clip(sanitizeTurnText(input.assistantText, input.systemPrompt))
+  const mark = callMark(input)
+  const userText = fit(sanitizeTurnText(input.userText, input.systemPrompt), mark)
+  const assistantText = fit(sanitizeTurnText(input.assistantText, input.systemPrompt), mark)
+  const userBody = projectCallContent(userText)
+  const assistantBody = projectCallContent(assistantText)
   // An interrupt stores only text that already played. Empty playback is not a turn.
-  if (input.interrupted && assistantText === '')
+  if (input.interrupted && assistantBody === '')
     return { action: 'skip', reason: 'interrupted' }
-  if (input.imageOnly && userText === '')
+  if (input.imageOnly && userBody === '')
     return { action: 'skip', reason: 'image' }
-  if (userText === '' || assistantText === '')
+  if (userBody === '' || assistantBody === '')
     return { action: 'skip', reason: 'empty' }
-  if (isPureCommand(userText))
+  if (isPureCommand(userBody))
     return { action: 'skip', reason: 'command' }
-  if (isPureEmoji(userText))
+  if (isPureEmoji(userBody))
     return { action: 'skip', reason: 'emoji' }
 
   const messages: ConversationMessageInput[] = [
@@ -89,6 +99,7 @@ export function decideChatTurn(input: ChatTurnInput): ChatTurnDecision {
       sessionId: input.sessionId,
       agentId: input.agentId,
       messages,
+      ...mark,
     },
   }
 }
@@ -104,6 +115,8 @@ export function sanitizeTurnText(text: string, systemPrompt?: string): string {
   output = output.replace(/<memory\b[^>]*>[\s\S]*?<\/memory>/gi, '')
   output = output.replace(/<system\b[^>]*>[\s\S]*?<\/system>/gi, '')
   output = stripMemorySection(output)
+  // A copied prompt can start with a call header. The new write adds its own header.
+  output = projectCallContent(output)
   return output.replace(/[ \t]+\n/g, '\n').trim()
 }
 
@@ -214,6 +227,16 @@ function isPureEmoji(text: string) {
   return /^[\p{Extended_Pictographic}\u200D\uFE0F]+$/u.test(compact)
 }
 
-function clip(text: string) {
-  return text.length <= maxContentLength ? text : text.slice(0, maxContentLength)
+function callMark(input: ChatTurnInput): { callId?: string, source?: CallSource } {
+  return {
+    ...(input.callId ? { callId: input.callId } : {}),
+    ...(input.source ? { source: input.source } : {}),
+  }
+}
+
+function fit(text: string, mark: { callId?: string, source?: CallSource }) {
+  const line = callHeaderLine(mark)
+  const limit = line ? maxContentLength - line.length - 1 : maxContentLength
+  const body = text.length <= limit ? text : text.slice(0, Math.max(limit, 0))
+  return prefixCallHeader(body, mark)
 }

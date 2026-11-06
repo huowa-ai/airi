@@ -54,6 +54,12 @@ A successful chat turn and a manual fact both call `appendConversation`. The age
 
 An interrupted turn is stored when the assistant text already played. That text includes a played filler. An interrupted turn with no played text is not stored. A failed turn is not stored.
 
+A chat turn can carry a call id and a source. The source is `voice`, `video`, or `text`. A typed turn uses `text`. The gateway stores `role`, `content`, and `timestamp` only. It drops other fields. The write puts this header on the first line, then the body:
+
+`<!-- airi:meta callId=<uuid> source=voice|video|text -->`
+
+A missing call id or a missing source is left out of that line. The model prompt, the chat bubble, and recall text use the body. The header is removed first. The memory graph can keep only the L0 rows for one call id or one source.
+
 A copied system prompt and the memory index are removed before the write. The write runs in the background. A failure does not stop the chat.
 
 Manual facts stay L0 JSON in session `airi:facts`. The role comes from `factRecordRole` in `memory-core-contract.ts`. That module is the only place that encodes the gateway extraction rule. A fact batch has no user message, so it does not start L1 extraction. A chat batch does.

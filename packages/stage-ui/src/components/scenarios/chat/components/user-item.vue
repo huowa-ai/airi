@@ -3,6 +3,7 @@ import type { ChatHistoryItem } from '../../../../types/chat'
 import type { ChatHistoryReplyPayload } from '../reply'
 
 import { isStageCapacitor, isStageWeb } from '@proj-airi/stage-shared'
+import { projectCallContent } from '@proj-airi/tencentdb-memory'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -43,10 +44,10 @@ const { t } = useI18n()
 const content = computed(() => {
   const raw = props.message.content
   if (typeof raw === 'string')
-    return raw
+    return projectCallContent(raw)
 
   if (Array.isArray(raw)) {
-    return raw.filter(part => part.type === 'text').map(part => part.text).join('\n')
+    return projectCallContent(raw.filter(part => part.type === 'text').map(part => part.text).join('\n'))
   }
 
   return ''

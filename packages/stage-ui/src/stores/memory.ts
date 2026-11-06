@@ -1,16 +1,17 @@
-import type { IdentityLink, IdentityMap, MemoryScope, MemoryScopeRequest, MemoryStorage, MemoryV3Client, RecallHit, WriteOutboxState } from '@proj-airi/tencentdb-memory'
+import type { CallTurnRecord, IdentityLink, IdentityMap, MemoryScope, MemoryScopeRequest, MemoryStorage, MemoryV3Client, RecallHit, WriteOutboxState } from '@proj-airi/tencentdb-memory'
 
 import type { MemoryEntry, MemoryWrite } from '../types/memory'
 import type { ChatTurnRecord } from './chat-turn-memory'
+import type { MemoryCallTurn } from './memory-layers'
 
 import { errorMessageFrom } from '@moeru/std'
 import { useLocalStorageManualReset } from '@proj-airi/stage-shared/composables'
-import { agentIdForEntry, bindMemoryScope, confirmIdentityLink, conversationContentHash, createChatTurnQueue, createMemoryClient, createRecallBuffer, createRemoteMemoryStorage, createWriteOutbox, defaultRecallBudget, deleteExactMessages, deleteLayerRecord, deliverConversation, formatRecall, GENERAL_AGENT_ID, isForgetPhrase, localScopeSessionId, memoryClientEnv, mergeRecall, parseSceneBinding, readIdentityMap, readMemoryClientConfig, readMemoryLayers, resolveLocalAccountId, resolveMemoryScope, sanitizeScopeId } from '@proj-airi/tencentdb-memory'
+import { agentIdForEntry, bindMemoryScope, confirmIdentityLink, conversationContentHash, createChatTurnQueue, createMemoryClient, createRecallBuffer, createRemoteMemoryStorage, createWriteOutbox, defaultRecallBudget, deleteExactMessages, deleteLayerRecord, deliverConversation, formatRecall, GENERAL_AGENT_ID, isForgetPhrase, localScopeSessionId, memoryClientEnv, mergeRecall, parseSceneBinding, readCallTurns, readIdentityMap, readMemoryClientConfig, readMemoryLayers, resolveLocalAccountId, resolveMemoryScope, sanitizeScopeId } from '@proj-airi/tencentdb-memory'
 import { useBroadcastChannel } from '@vueuse/core'
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 
-import { EMPTY_MEMORY_LAYERS, viewMemoryLayers } from './memory-layers'
+import { EMPTY_MEMORY_LAYERS, viewCallTurn, viewMemoryLayers } from './memory-layers'
 
 const serviceConfigError = 'Set the service address.'
 
@@ -50,6 +51,9 @@ export const useMemoryStore = defineStore('memory', () => {
   const serviceRead = ref<MemoryServiceRead>('loading')
   const entries = ref<MemoryEntry[]>(NO_ENTRIES)
   const layers = ref(EMPTY_MEMORY_LAYERS)
+  const callTurns = ref<MemoryCallTurn[]>([])
+  const knownAgents = new Set<string>()
+  let turnGeneration = 0
   let remote: MemoryStorage | undefined
   let memoryClient: MemoryV3Client | undefined
   const storages = new Map<string, MemoryStorage>()
@@ -71,6 +75,7 @@ export const useMemoryStore = defineStore('memory', () => {
       if (event.ok) {
         buffer.attach(event.input.turnId, event.input.sessionId, event.ids, place)
         outbox.succeeded(event.input.turnId)
+        void refreshCallTurns()
         return
       }
       outbox.add({
@@ -157,6 +162,7 @@ export const useMemoryStore = defineStore('memory', () => {
     scopedFacts.clear()
     clearLiveEntries()
     layers.value = EMPTY_MEMORY_LAYERS
+    callTurns.value = []
     if (!serviceEnabled.value) {
       remote = undefined
       memoryClient = undefined
@@ -203,16 +209,21 @@ export const useMemoryStore = defineStore('memory', () => {
       if (!serviceEnabled.value || !client || !raw) {
         clearLiveEntries()
         layers.value = EMPTY_MEMORY_LAYERS
+        callTurns.value = []
         serviceRead.value = serviceEnabled.value ? 'error' : 'off'
         return
       }
-      const [listed, snapshot] = await Promise.all([
+      const turnRead = ++turnGeneration
+      const [listed, snapshot, turns] = await Promise.all([
         client.list().then(value => ({ ok: true as const, value }), error => ({ ok: false as const, error })),
         readMemoryLayers(raw),
+        readCallTurns(raw, [...knownAgents]).then(value => ({ ok: true as const, value }), () => ({ ok: false as const, value: [] as CallTurnRecord[] })),
       ])
       if (generation !== serviceGeneration)
         return
       layers.value = viewMemoryLayers(snapshot)
+      if (turnRead === turnGeneration)
+        callTurns.value = turns.value.map(viewCallTurn)
       if (listed.ok) {
         entries.value = listed.value
         serviceError.value = ''
@@ -410,6 +421,7 @@ export const useMemoryStore = defineStore('memory', () => {
     if (!enabled.value || !client || outbox.isDone(input.turnId))
       return false
     const scope = scopeForTurn(input)
+    knownAgents.add(scope.agentId)
     const queued = chatTurns.enqueue(bindMemoryScope(client, scope), {
       sessionId: scope.sessionId,
       turnId: input.turnId,
@@ -423,6 +435,8 @@ export const useMemoryStore = defineStore('memory', () => {
       timestamp: input.timestamp,
       interrupted: input.interrupted,
       failed: input.failed,
+      ...(input.callId ? { callId: input.callId } : {}),
+      ...(input.source ? { source: input.source } : {}),
     })
     if (!queued)
       return false
@@ -460,6 +474,42 @@ export const useMemoryStore = defineStore('memory', () => {
 
   function recallBlock(sessionId: string) {
     return recallBlocks.get(sessionId) ?? ''
+  }
+
+  /**
+   * Adds character cards that the next L0 read must include.
+   * A card with no manual fact is still absent from the directory.
+   */
+  function includeCallAgents(agentIds: readonly string[]) {
+    let added = false
+    for (const agentId of agentIds) {
+      const id = agentId.trim()
+      if (!id || knownAgents.has(id))
+        continue
+      knownAgents.add(id)
+      added = true
+    }
+    if (added)
+      void refreshCallTurns()
+  }
+
+  async function refreshCallTurns() {
+    const generation = ++turnGeneration
+    const client = memoryClient
+    if (!serviceEnabled.value || !client) {
+      callTurns.value = []
+      return
+    }
+    try {
+      const records = await readCallTurns(client, [...knownAgents])
+      if (generation !== turnGeneration)
+        return
+      callTurns.value = records.map(viewCallTurn)
+    }
+    catch {
+      if (generation === turnGeneration)
+        callTurns.value = []
+    }
   }
 
   async function forgetLatest(input: ChatTurnRecord) {
@@ -616,6 +666,8 @@ export const useMemoryStore = defineStore('memory', () => {
     scopedFacts.clear()
     clearLiveEntries()
     layers.value = EMPTY_MEMORY_LAYERS
+    callTurns.value = []
+    knownAgents.clear()
     serviceError.value = ''
     serviceRead.value = 'off'
     post([])
@@ -662,6 +714,8 @@ export const useMemoryStore = defineStore('memory', () => {
     serviceRead,
     entries: computed(() => entries.value),
     layers,
+    callTurns: computed(() => callTurns.value),
+    includeCallAgents,
     listFacts,
     ready,
     prepareScope,

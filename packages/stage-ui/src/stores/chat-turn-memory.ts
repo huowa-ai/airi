@@ -1,5 +1,5 @@
 import type { ChatHistoryItem, StreamingAssistantMessage } from '@proj-airi/core-agent'
-import type { ChatTurnInput } from '@proj-airi/tencentdb-memory'
+import type { CallSource, ChatTurnInput } from '@proj-airi/tencentdb-memory'
 
 import { extractMessageText } from '../libs/chat-sync/wire-message'
 
@@ -26,6 +26,10 @@ export function captureCompletedChatTurn(options: {
   systemPrompt: string
   binding?: string
   speakerId?: string
+  /** One UUID for the call. Absent when the turn is not part of a call. */
+  callId?: string
+  /** `voice`, `video`, or `text`. A typed turn uses `text`. */
+  source?: CallSource
   record: (input: ChatTurnRecord) => void
 }) {
   const spoken = userSpeech(options.message)
@@ -40,6 +44,8 @@ export function captureCompletedChatTurn(options: {
     timestamp: new Date().toISOString(),
     interrupted: options.output.interrupted === true,
     failed: options.message.role === 'error',
+    source: options.source ?? 'text',
+    ...(options.callId ? { callId: options.callId } : {}),
     ...(options.binding ? { binding: options.binding } : {}),
     ...(options.speakerId ? { speakerId: options.speakerId } : {}),
   })
