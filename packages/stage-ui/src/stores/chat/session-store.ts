@@ -60,9 +60,16 @@ export interface DeleteChatMessagePayload {
 const OUTBOX_MAX_ATTEMPTS = 5
 
 const useChatSessionSelectionStore = defineStore('chat-session-selection', () => {
+  // One displayed conversation for every stage window. The floating chat
+  // follows the main window. This ref stays out of chat-session state, so a
+  // message or index snapshot does not navigate. See issue #2595.
   const activeSessionId = ref('')
 
   return { activeSessionId }
+}, {
+  synced: {
+    state: true,
+  },
 })
 
 export const useChatSessionStore = defineStore('chat-session', () => {
@@ -77,9 +84,8 @@ export const useChatSessionStore = defineStore('chat-session', () => {
   const { activeCardId } = storeToRefs(cards)
 
   const chatSessionSelection = useChatSessionSelectionStore()
-  // The selected conversation belongs to one window. Expose it through the
-  // existing chat-session API as a computed property so synchronized session
-  // data never makes another window navigate to the same conversation.
+  // The displayed id lives in its own synchronized store. Expose it on the
+  // chat-session API so callers keep one selection method.
   const activeSessionId = computed({
     get: () => chatSessionSelection.activeSessionId,
     set: value => chatSessionSelection.activeSessionId = value,
@@ -763,8 +769,8 @@ export const useChatSessionStore = defineStore('chat-session', () => {
       ? Object.keys(characterIndex.sessions).find(id => sessionMetas.value[id] && !sessionMetas.value[id].hidden)
       : undefined
 
-    // Persisted character fallback is shared, but live selection is local to
-    // the window that was displaying the deleted session.
+    // The index fallback is shared. The displayed conversation moves only
+    // when it was the deleted session.
     if (fallbackId && characterIndex) {
       characterIndex.activeSessionId = fallbackId
       if (wasActive) {
@@ -777,10 +783,9 @@ export const useChatSessionStore = defineStore('chat-session', () => {
 
     const replacementSessionId = await createSession(characterId, { setActive: wasActive })
     if (!wasActive) {
-      // The synchronized leader may be displaying a different character, but
-      // this replacement is still the canonical fallback for the character
-      // whose final session was deleted. Persist that index choice without
-      // navigating the leader's window-local selection.
+      // This replacement is the saved fallback for the character whose last
+      // session was deleted. The displayed conversation is another character,
+      // so this write does not change it.
       const replacementCharacterIndex = index.value?.characters[characterId]
       if (replacementCharacterIndex) {
         replacementCharacterIndex.activeSessionId = replacementSessionId
@@ -1638,7 +1643,7 @@ export const useChatSessionStore = defineStore('chat-session', () => {
     },
   })
 
-  /** Selects and hydrates one conversation only in the current window. */
+  /** Selects one conversation in every stage window and hydrates it. */
   async function setActiveSession(sessionId: string) {
     activeSessionId.value = sessionId
 
@@ -1904,9 +1909,8 @@ export const useChatSessionStore = defineStore('chat-session', () => {
 
   let lastActiveSessionMeta: ChatSessionMeta | undefined
 
-  // Session data is synchronized, but selection belongs to this window. If
-  // another window deletes the selected session, repair this window locally
-  // instead of leaving it pointed at an ID that can no longer hydrate.
+  // The displayed id is shared. When another window deletes that session,
+  // move every window to a remaining session for the same character.
   watch([
     activeSessionId,
     () => Object.values(sessionMetas.value),
