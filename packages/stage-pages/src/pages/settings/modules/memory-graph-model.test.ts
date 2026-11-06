@@ -147,6 +147,19 @@ describe('memory graph model', () => {
     expect(bySource.links.every(link => bySource.nodes.some(node => node.id === link.source) && bySource.nodes.some(node => node.id === link.target))).toBe(true)
   })
 
+  it('uses the caller label when a persona file is empty', () => {
+    const graph = buildMemoryGraph({
+      serviceRead: 'ready',
+      serviceError: '',
+      facts: [],
+      cores: [{ content: '' }],
+      personaLabel: 'Translated persona',
+    })
+
+    expect(graph.nodes.find(node => node.layer === 'L3')?.label).toBe('Translated persona')
+    expect(graph.details.find(detail => detail.layer === 'L3')?.label).toBe('Translated persona')
+  })
+
   it('splits a persona on headings and keeps a file without headings as one section', () => {
     expect(personaSections('# Name\n\nAda')).toEqual([{ heading: 'Name', body: 'Ada' }])
     expect(personaSections('Ada likes tea.')).toEqual([{ heading: 'Ada likes tea.', body: 'Ada likes tea.' }])

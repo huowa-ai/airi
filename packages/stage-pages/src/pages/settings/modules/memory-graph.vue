@@ -12,8 +12,10 @@ import { useI18n } from 'vue-i18n'
 import MemoryGraphView from './components/memory-graph-view.vue'
 
 import { buildMemoryGraph, callTurnFact, filterMemoryGraph, memoryLayerColor, readMemoryGraphSource } from './memory-graph-model'
+import { useMemoryServiceMessage } from './memory-service-message'
 
 const { t } = useI18n()
+const serviceMessage = useMemoryServiceMessage()
 const memory = useMemoryStore()
 const { serviceRead, serviceError, layers, scope, callTurns } = storeToRefs(memory)
 const { cards } = storeToRefs(useAiriCardStore())
@@ -70,6 +72,7 @@ const built = computed(() => {
           ...(snapshot.cores.truncated ? ['L3' as const] : []),
         ]
       : [],
+    personaLabel: t(`${KEY}.types.persona`),
   })
 })
 
@@ -176,11 +179,11 @@ function typeLabel(type: string | undefined) {
       {{ t(`${KEY}.off`) }}
     </Alert>
     <Alert v-else-if="model.status === 'error'" tone="danger" :title="t(`${KEY}.error-title`)">
-      {{ model.error || t(`${KEY}.error`) }}
+      {{ model.error ? serviceMessage(model.error) : t(`${KEY}.error`) }}
     </Alert>
     <Alert v-else-if="model.status === 'loading'" tone="info" :title="t(`${KEY}.loading`)" loading />
     <Alert v-else-if="serviceError" tone="danger" :title="t(`${KEY}.error-title`)">
-      {{ serviceError }}
+      {{ serviceMessage(serviceError) }}
     </Alert>
     <Alert v-else-if="built.nodes.length === 0" tone="info" :title="t(`${KEY}.empty-title`)">
       {{ t(`${KEY}.empty`) }}
@@ -216,10 +219,10 @@ function typeLabel(type: string | undefined) {
           {{ t(`${KEY}.scope-note`, { team: scope.teamId }) }}
         </p>
         <p v-for="failure in model.layerErrors" :key="failure.layer" :class="['text-xs', 'text-red-300']">
-          {{ t(`${KEY}.layer-error`, { layer: failure.layer, message: failure.message }) }}
+          {{ t(`${KEY}.layer-error`, { layer: layerLabel(failure.layer), message: serviceMessage(failure.message) }) }}
         </p>
         <p v-for="layer in model.truncatedLayers" :key="layer" :class="['text-xs', 'text-neutral-300']">
-          {{ t(`${KEY}.truncated`, { layer }) }}
+          {{ t(`${KEY}.truncated`, { layer: layerLabel(layer) }) }}
         </p>
         <p v-if="reducedMotion === 'reduce'" :class="['text-sm', 'text-neutral-300']">
           {{ t(`${KEY}.reduced`) }}

@@ -14,7 +14,8 @@ import { computed, ref, watch } from 'vue'
 import { EMPTY_MEMORY_LAYERS, viewCallTurn, viewMemoryLayers } from './memory-layers'
 import { memoryTransport } from './memory-transport'
 
-const serviceConfigError = 'Set the service address.'
+/** Shown when the memory service has no address. The settings pages translate this exact sentence. */
+export const memoryServiceAddressError = 'Set the service address.'
 
 /** The live list is empty until a MemoryCore read for this service identity succeeds. */
 const NO_ENTRIES: MemoryEntry[] = []
@@ -184,7 +185,7 @@ export const useMemoryStore = defineStore('memory', () => {
     if (!config.configured) {
       remote = undefined
       memoryClient = undefined
-      serviceError.value = serviceConfigError
+      serviceError.value = memoryServiceAddressError
       serviceRead.value = 'error'
       return
     }
@@ -349,7 +350,7 @@ export const useMemoryStore = defineStore('memory', () => {
     const storage = storageFor(scope)
     if (!storage) {
       if (serviceEnabled.value && serviceError.value === '')
-        serviceError.value = serviceConfigError
+        serviceError.value = memoryServiceAddressError
       return undefined
     }
     try {
