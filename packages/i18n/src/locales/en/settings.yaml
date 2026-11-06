@@ -1111,10 +1111,10 @@ pages:
         enable-description: The memory service is the long-term memory for this character. When this is on, the character reads and writes only that service. When this is off, or the service cannot be reached, long-term memory stays empty. Memories kept only on this device are not used.
         endpoint: Service address
         endpoint-description: An http or https origin, such as http://127.0.0.1:8420. Do not put a key in the address.
-        team: Team id
-        team-description: The same team id on every app that shares this service.
-        user: User id
-        user-description: The same user id on every app that shares this service.
+        team: Private team
+        team-description: The service builds this team from the local account. Another account gets another team.
+        user: Local account id
+        user-description: The local account for this device. An empty field is saved once and reused.
         key: API key
         key-description: Required. The gateway rejects a call that has no Authorization header. An empty field sends the key local. The key stays on this device.
         service-id: Service id
@@ -1153,8 +1153,9 @@ pages:
           l2: L2 scene
           l3: L3 persona
         scope: Scope
-        scope-note: Scenes and the persona follow the team and the character. They are not limited to this user.
-        scope-team: This record follows the team and the character. It is not limited to this user.
+        scope-current: 'Current scope: team {team}.'
+        scope-note: Scenes and the persona follow team {team} and the character.
+        scope-team: This record follows team {team} and the character.
         layer-error: '{layer} request failed. {message}'
         truncated: 'The service has more {layer} records than this view draws.'
         type: Type

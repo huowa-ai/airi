@@ -1,3 +1,5 @@
+import { resolveMemoryScope } from '@proj-airi/tencentdb-memory'
+
 /**
  * In-memory MemoryCore gateway for tests.
  * One team id and one user id share one L0 row list. A second user does not.
@@ -304,6 +306,12 @@ export function createMemoryCoreFetch() {
         ...(core.updatedAt ? { updatedAt: core.updatedAt } : {}),
       })))
     },
+    addScene(scene: GatewayScene) {
+      scenes.push(scene)
+    },
+    addCore(core: GatewayCore) {
+      cores.push(core)
+    },
     reset() {
       scopes.clear()
       atoms.splice(0, atoms.length)
@@ -313,6 +321,11 @@ export function createMemoryCoreFetch() {
       failure = ''
     },
   }
+}
+
+/** Private team the store sends for this local account id. */
+export function localServiceTeamId(userId = 'user-1') {
+  return resolveMemoryScope({ platform: 'local', userId, sessionId: 'airi:local' }).teamId
 }
 
 /** Writes the service settings the store reads at startup. Values are examples, not secrets. */

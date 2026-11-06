@@ -32,7 +32,7 @@ export interface MemoryCoreView {
   updatedAt?: number
 }
 
-/** L1–L3 rows for the graph. L2 and L3 are team and character scope, not this user alone. */
+/** L1–L3 rows for the graph. L2 and L3 follow the resolved team and the character. */
 export interface MemoryLayerView {
   atoms: MemoryLayerItemState<MemoryAtomView>
   scenes: MemoryLayerItemState<MemorySceneView>

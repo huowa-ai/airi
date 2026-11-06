@@ -20,6 +20,7 @@ export type {
   MemorySceneFile,
 } from './layer-read'
 export {
+  bindMemoryScope,
   createMemoryClient,
   MemoryClientError,
 } from './memory-client'
@@ -34,6 +35,7 @@ export type {
   DeleteConversationResult,
   ListScenariosInput,
   ListScenariosResult,
+  MemoryCallScope,
   MemoryV3Client,
   MemoryV3ClientOptions,
   QueryAtomicInput,
@@ -47,6 +49,24 @@ export type {
   SearchConversationInput,
   SearchConversationResult,
 } from './memory-client'
+export {
+  confirmIdentityLink,
+  EMPTY_IDENTITY_MAP,
+  localScopeSessionId,
+  parseSceneBinding,
+  readIdentityMap,
+  resolveLocalAccountId,
+  resolveMemoryScope,
+  sanitizeScopeId,
+} from './memory-scope'
+export type {
+  CrossGroupShareHook,
+  IdentityLink,
+  IdentityMap,
+  MemoryScope,
+  MemoryScopeRequest,
+  PlatformIdentity,
+} from './memory-scope'
 export {
   agentIdForEntry,
   createFakeMemoryStorage,

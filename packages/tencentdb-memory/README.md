@@ -28,8 +28,8 @@ The channel default is `ws://localhost:6121/ws`. Set `AIRI_URL` to use another c
 Set these variables in the environment. Do not commit them.
 
 - `TENCENTDB_MEMORY_ENDPOINT` is an `http` or `https` origin, such as `http://127.0.0.1:8420` or a server origin.
-- `TENCENTDB_MEMORY_TEAM_ID` is one deployment id. Later clients must use the same value. This package does not sync them.
-- `TENCENTDB_MEMORY_USER_ID` is the owner. Later clients must use the same value. This package does not sync them.
+- `TENCENTDB_MEMORY_TEAM_ID` is the default team when a call omits one. Stage reads and writes send the team from `resolveMemoryScope` instead.
+- `TENCENTDB_MEMORY_USER_ID` is the default user when a call omits one. A stage call sends the speaker id.
 - `TENCENTDB_MEMORY_AGENT_ID` is the default agent id for a v3 call.
 - `TENCENTDB_MEMORY_API_KEY` is the bearer token. The gateway returns 401 when the header is missing. An empty value sends `local`.
 - `TENCENTDB_MEMORY_SERVICE_ID` is `x-tdai-service-id`. The gateway returns 401 when the header is missing. An empty value sends `default`.
@@ -56,13 +56,15 @@ Manual facts stay L0 JSON in session `airi:facts`. The role is `assistant`. Memo
 
 The v3 catalog has `atomic/update`, `atomic/query`, `atomic/search`, and `atomic/delete`. It has no atomic create route. `atomic/update` returns 404 for an unknown id. The graph lists these facts with `listFacts`, and it reads L1, L2, and L3 for the same agent ids.
 
-The current team id and user id stay as they are. A private team id per user is a later change.
+`resolveMemoryScope` picks the team for each call. A private or local chat uses `u_<platform>_<userId>`. A group uses `g_<platform>_<groupId>`. The user id is the speaker. The agent id is the character card, or `airi:general`. Facts use that same agent id. The local account id is the settings user id, or one id stored on first use.
+
+An identity map can point several platform identities at one private team. The map starts empty. A link is stored only after confirmation. The resolver does not merge accounts by itself. Cross-group sharing stays off. The request type has a hook for a later opt-in, and the resolver does not call it.
 
 ## Scope of L2 and L3
 
-L0 facts and L1 atoms follow the team, the user, and the character. L2 scenes and the L3 persona follow the team and the character only. The gateway scope is `team:<team id>|agent:<agent id>`. A second user in that team and character sees the same scenes and the same persona. This package does not filter them by user. The graph says so in the record detail.
+L0 facts and L1 atoms follow the team, the user, and the character. L2 scenes and the L3 persona follow the team and the character only. The gateway scope is `team:<team id>|agent:<agent id>`. A private account and a group use different team ids, so those layers do not cross. Members of one group share that group's scenes and persona. The graph shows the current team. The L2 and L3 detail names that team.
 
-A later change can give each user a separate character id or a separate team id. This package does not do that.
+This package does not copy old rows from a fixed team id.
 
 ## Use the fake storage
 

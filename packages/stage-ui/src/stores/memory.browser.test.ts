@@ -1,11 +1,12 @@
 import localforage from 'localforage'
 
+import { errorMessageFrom } from '@moeru/std'
 import { createPinia, disposePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { memoryRepo } from '../database/repos/memory.repo'
 import { useMemoryStore } from './memory'
-import { clearMemoryServiceSettings, createMemoryCoreFetch, enableMemoryService } from './memory-core-fake'
+import { clearMemoryServiceSettings, createMemoryCoreFetch, enableMemoryService, localServiceTeamId } from './memory-core-fake'
 
 const records = localforage.createInstance({ name: 'airi-memory', storeName: 'entries' })
 const stores: ReturnType<typeof createPinia>[] = []
@@ -227,13 +228,96 @@ describe('memory store', () => {
     expect(memory.serviceRead).toBe('ready')
   })
 
-  it('reports an error when the service settings are incomplete', async () => {
-    localStorage.removeItem('memory/service-team-id')
+  it('reports an error when the service address is missing', async () => {
+    localStorage.removeItem('memory/service-endpoint')
     const memory = createStore()
     await memory.ready()
 
     expect(memory.serviceRead).toBe('error')
-    expect(memory.serviceError).toBe('Set the service address, the team id, and the user id.')
+    expect(memory.serviceError).toBe('Set the service address.')
     expect(memory.entries).toEqual([])
+  })
+
+  it('keeps the generated local account id across store loads', async () => {
+    localStorage.removeItem('memory/service-user-id')
+    const first = createStore()
+    await first.ready()
+    const accountId = first.accountId
+    const teamId = first.scope?.teamId
+
+    const second = createStore()
+    await second.ready()
+
+    expect(accountId).not.toBe('')
+    expect(second.accountId).toBe(accountId)
+    expect(second.scope?.teamId).toBe(teamId)
+    expect(teamId).toBe(`u_local_${accountId}`)
+  })
+
+  it('keeps private facts, scenes, and chat turns out of a group scope', async () => {
+    const adds: Array<{ team_id?: string, user_id?: string, agent_id?: string, session_id?: string }> = []
+    const fetchErrors: string[] = []
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      const body = typeof init?.body === 'string' ? JSON.parse(init.body) as { team_id?: string, user_id?: string, agent_id?: string, session_id?: string, messages?: Array<{ role?: string }> } : undefined
+      if (url.includes('/v3/conversation/add') && body?.messages?.some(message => message.role === 'user'))
+        adds.push(body)
+      try {
+        return await gateway.fetch(input, init)
+      }
+      catch (error) {
+        fetchErrors.push(errorMessageFrom(error) ?? 'fetch failed')
+        throw error
+      }
+    })
+    const team = localServiceTeamId()
+    gateway.addScene({ teamId: team, agentId: 'card-1', path: 'private.md', content: 'Private scene.' })
+    gateway.addScene({ teamId: 'g_discord_channel-a', agentId: 'card-1', path: 'group.md', content: 'Group scene.' })
+    gateway.addCore({ teamId: team, agentId: 'card-1', content: 'Private persona.' })
+    gateway.addCore({ teamId: 'g_discord_channel-a', agentId: 'card-1', content: 'Group persona.' })
+    const memory = createStore()
+    const group = {
+      platform: 'discord',
+      userId: 'user-1',
+      groupId: 'channel-a',
+      sessionId: 'session-group',
+      personaId: 'card-1',
+    }
+    const otherGroup = { ...group, userId: 'user-2' }
+
+    await memory.write({ description: 'Secret', body: 'Ada private fact.' }, 'card-1')
+    await memory.write({ description: 'Rule', body: 'Group rule.' }, 'card-1', group)
+    expect(memory.recordChatTurn({
+      sessionId: 'session-private',
+      turnId: 'turn-private',
+      personaId: 'card-1',
+      userText: 'Private turn.',
+      assistantText: 'Private reply.',
+      timestamp: '2026-11-01T00:00:00.000Z',
+    })).toBe(true)
+    expect(memory.recordChatTurn({
+      sessionId: 'session-group',
+      turnId: 'turn-group',
+      personaId: 'card-1',
+      binding: 'discord:channel-a',
+      speakerId: 'user-1',
+      userText: 'Group turn.',
+      assistantText: 'Group reply.',
+      timestamp: '2026-11-01T00:00:00.000Z',
+    })).toBe(true)
+    await vi.waitFor(() => expect(adds).toHaveLength(2))
+
+    expect(fetchErrors).toEqual([])
+    expect(memory.indexFor('card-1')).toContain('Secret')
+    expect(memory.indexFor('card-1')).not.toContain('Rule')
+    expect(memory.indexFor('card-1', group)).toContain('Rule')
+    expect(memory.indexFor('card-1', group)).not.toContain('Secret')
+    expect(memory.indexFor('card-1', otherGroup)).not.toContain('Rule')
+    expect(memory.layers.scenes.items.map(item => item.content)).toEqual(['Private scene.'])
+    expect(memory.layers.cores.items.map(item => item.content)).toEqual(['Private persona.'])
+    expect(adds.map(item => item.team_id)).toEqual([team, 'g_discord_channel-a'])
+    expect(adds.map(item => item.user_id)).toEqual(['user-1', 'user-1'])
+    expect(adds.every(item => item.agent_id === 'card-1')).toBe(true)
+    expect(adds.map(item => item.session_id)).toEqual(['session-private', 'session-group'])
   })
 })

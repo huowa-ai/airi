@@ -15,7 +15,7 @@ import { buildMemoryGraph, memoryLayerColor, readMemoryGraphSource } from './mem
 
 const { t } = useI18n()
 const memory = useMemoryStore()
-const { serviceRead, serviceError, layers } = storeToRefs(memory)
+const { serviceRead, serviceError, layers, scope } = storeToRefs(memory)
 const { cards } = storeToRefs(useAiriCardStore())
 const reducedMotion = usePreferredReducedMotion()
 const selectedId = ref('')
@@ -130,8 +130,11 @@ function typeLabel(type: string | undefined) {
           </span>
           <span>{{ t(`${KEY}.derived`) }}</span>
         </div>
-        <p v-if="showScope" :class="['text-xs', 'text-neutral-300']">
-          {{ t(`${KEY}.scope-note`) }}
+        <p v-if="model.status === 'ready' && scope" :class="['text-xs', 'text-neutral-300']">
+          {{ t(`${KEY}.scope-current`, { team: scope.teamId }) }}
+        </p>
+        <p v-if="showScope && scope" :class="['text-xs', 'text-neutral-300']">
+          {{ t(`${KEY}.scope-note`, { team: scope.teamId }) }}
         </p>
         <p v-for="failure in model.layerErrors" :key="failure.layer" :class="['text-xs', 'text-red-300']">
           {{ t(`${KEY}.layer-error`, { layer: failure.layer, message: failure.message }) }}
@@ -188,11 +191,11 @@ function typeLabel(type: string | undefined) {
             <dd :class="['break-words']">
               {{ cardName(selected.persona) }}
             </dd>
-            <template v-if="selected.scope === 'team-agent'">
+            <template v-if="selected.scope === 'team-agent' && scope">
               <dt :class="['text-neutral-500 dark:text-neutral-400']">
                 {{ t(`${KEY}.scope`) }}
               </dt>
-              <dd>{{ t(`${KEY}.scope-team`) }}</dd>
+              <dd>{{ t(`${KEY}.scope-team`, { team: scope.teamId }) }}</dd>
             </template>
             <template v-if="selected.type">
               <dt :class="['text-neutral-500 dark:text-neutral-400']">

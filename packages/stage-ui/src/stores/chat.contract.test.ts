@@ -690,8 +690,8 @@ describe('chat store contract', () => {
     expect(prompts[1]).toContain('Start with the next step.')
   })
 
-  // A scene belongs to a persona. Its run reads general memories and its persona's own, and cannot save recipes.
-  it('gives a scene run its card memories, the general ones, and no recipe proposals', async () => {
+  // A scene reads the group scope for its card. Private facts stay on the local team.
+  it('gives a scene run its group memories and hides private facts', async () => {
     const gateway = createMemoryCoreFetch()
     const previousFetch = globalThis.fetch
     vi.stubGlobal('fetch', gateway.fetch)
@@ -713,7 +713,13 @@ describe('chat store contract', () => {
     try {
       const nickname = (await memory.write({ description: 'What the owner likes to be called.', body: 'Yumeka.' }, 'default'))!
       await memory.makeGeneral(nickname)
-      const rules = (await memory.write({ description: 'Rules of this channel.', body: 'No spoilers.' }, 'discord-host'))!
+      const rules = (await memory.write({ description: 'Rules of this channel.', body: 'No spoilers.' }, 'discord-host', {
+        platform: 'discord',
+        userId: 'user-1',
+        groupId: 'channel:a',
+        sessionId: 'scene-session',
+        personaId: 'discord-host',
+      }))!
       await memory.write({ description: 'How the focus card answers.', body: 'Next step first.' }, 'focus')
 
       await useChatStore().send({ sessionId: 'scene-session', text: 'save a recipe for me' })
@@ -721,7 +727,7 @@ describe('chat store contract', () => {
       expect(toolNames[0]).not.toContain('builtIn_proposeRecipe')
       expect(toolNames[0]).toContain('builtIn_writeMemory')
       expect(prompt).toContain(`- ${rules.id}: Rules of this channel.`)
-      expect(prompt).toContain(`- ${nickname.id}: What the owner likes to be called.`)
+      expect(prompt).not.toContain(`- ${nickname.id}: What the owner likes to be called.`)
       expect(prompt).not.toContain('How the focus card answers.')
 
       // With long-term memory off, no memory tool or index reaches the run.
