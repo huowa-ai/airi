@@ -1,3 +1,5 @@
+export { createChatTurnQueue, decideChatTurn, sanitizeTurnText } from './chat-turn'
+export type { ChatTurnDecision, ChatTurnInput, ChatTurnQueue, ChatTurnSkipReason } from './chat-turn'
 export {
   defaultMemoryApiKey,
   defaultMemoryServiceId,
@@ -7,6 +9,7 @@ export {
   readMemoryClientConfig,
 } from './client-config'
 export type { MemoryClientConfig, MemoryClientConfigResult } from './client-config'
+export { appendConversation, batchNotifiesExtraction } from './conversation-write'
 export type { MemoryFactProjection, MemoryNotice } from './fact-projection'
 export { readMemoryLayers } from './layer-read'
 export type {

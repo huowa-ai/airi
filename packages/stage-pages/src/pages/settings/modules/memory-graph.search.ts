@@ -4,7 +4,7 @@ import { useMemoryStore } from '@proj-airi/stage-ui/stores/memory'
 
 import { buildMemoryGraph } from './memory-graph-model'
 
-/** The memory graph page. Search lists the same service facts the page draws. */
+/** The memory graph page. Search lists the same service facts the page draws. Those facts use the character card id. */
 export default {
   routes: [{
     path: '/settings/modules/memory-graph',

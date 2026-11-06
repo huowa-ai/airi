@@ -4,7 +4,8 @@ import type { MemoryEntry, MemoryMutation, MemoryProvenance, MemoryStorage, Memo
 import { v7 as uuidv7 } from 'uuid'
 import { array, boolean, literal, number, object, optional, safeParse, string } from 'valibot'
 
-import { GENERAL_AGENT_ID } from './memory-storage'
+import { appendConversation } from './conversation-write'
+import { agentIdForEntry, GENERAL_AGENT_ID } from './memory-storage'
 
 /** L0 session that holds fact records. It is not a chat transcript. */
 export const factSessionId = 'airi:facts'
@@ -46,6 +47,8 @@ interface DirectoryState {
 /**
  * Stores AIRI facts as L0 messages on MemoryCore.
  * One team and one user. The agent id is the character card, or {@link GENERAL_AGENT_ID}.
+ * Chat turns use that same id. The fact session is {@link factSessionId}.
+ * The message role is `assistant`, so this write does not start L1 extraction.
  * IndexedDB is not written here.
  */
 export function createRemoteMemoryStorage(client: MemoryV3Client): MemoryStorage {
@@ -163,13 +166,13 @@ async function removeFacts(client: MemoryV3Client, ids: string[], updatedAt: num
     if (!current || current.deleted || updatedAt <= current.updatedAt)
       continue
     await deleteMessages(client, current.agentId, current.messageIds)
-    await addFact(client, current.agentId, { ...current.entry, updatedAt }, true)
+    await addFact(client, current.entry.persona, { ...current.entry, updatedAt }, true)
   }
 }
 
 async function clearFacts(client: MemoryV3Client, updatedAt: number) {
   const directory = await readDirectory(client)
-  const agents = [GENERAL_AGENT_ID, ...directory.personas]
+  const agents = [agentIdForEntry({}), ...directory.personas.map(persona => agentIdForEntry({ persona }))]
   for (const agentId of agents) {
     await client.deleteConversation({ agentId, sessionIds: [factSessionId] })
   }
@@ -189,9 +192,10 @@ interface LiveFact {
 }
 
 async function loadFacts(client: MemoryV3Client, directory: DirectoryState) {
-  const agents = [GENERAL_AGENT_ID, ...directory.personas]
+  const owners: Array<string | undefined> = [undefined, ...directory.personas]
   const facts: LiveFact[] = []
-  for (const agentId of agents) {
+  for (const persona of owners) {
+    const agentId = agentIdForEntry({ persona })
     const messages = await queryAll(client, agentId, factSessionId)
     for (const message of messages) {
       const parsed = safeParse(factSchema, parseJson(message.content))
@@ -199,7 +203,6 @@ async function loadFacts(client: MemoryV3Client, directory: DirectoryState) {
         continue
       if (parsed.output.updatedAt <= directory.clearedAt)
         continue
-      const persona = agentId === GENERAL_AGENT_ID ? undefined : agentId
       facts.push({
         entry: factEntry(parsed.output, persona),
         updatedAt: parsed.output.updatedAt,
@@ -231,22 +234,19 @@ function newest(facts: LiveFact[], id: string | undefined) {
   return facts.filter(fact => fact.entry.id === id).sort((left, right) => right.updatedAt - left.updatedAt)[0]
 }
 
-async function addFact(client: MemoryV3Client, agentId: string, entry: MemoryEntry, deleted: boolean) {
-  await client.addConversation({
-    agentId,
+async function addFact(client: MemoryV3Client, persona: string | undefined, entry: MemoryEntry, deleted: boolean) {
+  await appendConversation(client, {
+    agentId: agentIdForEntry({ persona }),
     sessionId: factSessionId,
-    messages: [{
-      role: 'user',
-      content: JSON.stringify({
-        kind: 'airi-fact',
-        id: entry.id,
-        description: entry.description,
-        body: entry.body,
-        updatedAt: entry.updatedAt,
-        ...(deleted ? { deleted: true } : {}),
-        ...(entry.provenance ? { provenance: entry.provenance } : {}),
-      }),
-    }],
+    messages: [storedRecord(JSON.stringify({
+      kind: 'airi-fact',
+      id: entry.id,
+      description: entry.description,
+      body: entry.body,
+      updatedAt: entry.updatedAt,
+      ...(deleted ? { deleted: true } : {}),
+      ...(entry.provenance ? { provenance: entry.provenance } : {}),
+    }))],
   })
 }
 
@@ -257,8 +257,9 @@ async function deleteMessages(client: MemoryV3Client, agentId: string, messageId
 }
 
 /**
- * Agent ids that own facts for this team and user.
- * The first id is {@link GENERAL_AGENT_ID}. The rest come from the fact directory.
+ * Agent ids for chat turns, manual facts, and the graph layers.
+ * The first id is {@link GENERAL_AGENT_ID}. The rest are character cards from the fact directory.
+ * Facts and chat turns share these ids. The fact session is {@link factSessionId}.
  */
 export async function readFactAgentIds(client: MemoryV3Client) {
   const directory = await readDirectory(client)
@@ -282,18 +283,28 @@ async function readDirectory(client: MemoryV3Client): Promise<DirectoryState> {
 async function saveDirectory(client: MemoryV3Client, state: DirectoryState) {
   if (state.messageIds.length > 0)
     await client.deleteConversation({ agentId: directoryAgentId, messageIds: state.messageIds })
-  await client.addConversation({
+  await appendConversation(client, {
     agentId: directoryAgentId,
     sessionId: directorySessionId,
-    messages: [{
-      role: 'user',
-      content: JSON.stringify({
-        kind: 'airi-directory',
-        personas: state.personas,
-        clearedAt: state.clearedAt,
-      }),
-    }],
+    messages: [storedRecord(JSON.stringify({
+      kind: 'airi-directory',
+      personas: state.personas,
+      clearedAt: state.clearedAt,
+    }))],
   })
+}
+
+/**
+ * A fact or directory record, not a chat turn.
+ *
+ * NOTICE:
+ * The role is `assistant` so MemoryCore does not start L1 extraction.
+ * `handleConversationAdd` notifies the pipeline only when the batch contains a user message.
+ * Source: TencentCloud/TencentDB-Agent-Memory `feat/server_team` `MemoryCore/src/gateway/v2-router.ts`.
+ * Remove this role when that gateway notifies a batch that has no user message.
+ */
+function storedRecord(content: string) {
+  return { role: 'assistant' as const, content }
 }
 
 async function queryAll(client: MemoryV3Client, agentId: string, sessionId: string) {

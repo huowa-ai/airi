@@ -1725,6 +1725,32 @@ describe('chat store contract', () => {
     })
   })
 
+  it('queues each finished turn for memory with the owner text and the reply', async () => {
+    llmStreamMock.mockImplementation(async (_model: string, _chatProvider: GenerationProvider, _context: Conversation, options: LlmStreamOptions) => {
+      await options.onStreamEvent?.({ type: 'text-delta', text: 'Tea is a good drink.' })
+      await options.onStreamEvent?.({ type: 'finish' })
+    })
+    const store = useChatStore()
+    const recorded: Array<{ userText: string, assistantText: string, personaId: string, sessionId: string }> = []
+    vi.spyOn(useMemoryStore(), 'recordChatTurn').mockImplementation((input) => {
+      recorded.push({
+        userText: input.userText,
+        assistantText: input.assistantText,
+        personaId: input.personaId,
+        sessionId: input.sessionId,
+      })
+      return true
+    })
+
+    await store.ingest('/help', { model: 'gpt-test', chatProvider: provider })
+    await store.ingest('Ada likes tea.', { model: 'gpt-test', chatProvider: provider })
+
+    expect(recorded.map(turn => turn.userText)).toEqual(['/help', 'Ada likes tea.'])
+    expect(recorded.every(turn => turn.assistantText === 'Tea is a good drink.')).toBe(true)
+    expect(recorded.every(turn => turn.personaId === 'alice' && turn.sessionId === 'session-1')).toBe(true)
+    expect(recorded.some(turn => turn.userText.includes('system prompt') || turn.assistantText.includes('sunny'))).toBe(false)
+  })
+
   // ROOT CAUSE:
   //
   // Muted speech dispatches special tokens without opening a TTS session.

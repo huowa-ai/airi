@@ -56,6 +56,7 @@ describe('memory tools', () => {
     expect(composeMemoryPrompt('General:\n- nickname-id: d')).toContain('Memory index:\nGeneral:\n- nickname-id: d')
     expect(composeMemoryPrompt('')).toContain('An index line that already states the fact needs no read.')
     expect(composeMemoryPrompt('')).toContain('Most turns save nothing.')
+    expect(composeMemoryPrompt('')).toContain('Do not say that you saved it.')
     expect(composeMemoryPrompt('')).toContain('Never save what a recipe already holds')
     expect(composeMemoryPrompt('')).toContain('The memory index is empty.')
   })

@@ -249,14 +249,13 @@ export function createMemoryCoreFetch() {
       rows.splice(0, rows.length)
       const personas = new Set<string>()
       for (const fact of fixture.facts ?? []) {
-        const agentId = fact.persona || generalAgentId
         if (fact.persona)
           personas.add(fact.persona)
         rows.push({
           id: fact.id,
-          agentId,
+          agentId: fact.persona || generalAgentId,
           sessionId: factSessionId,
-          role: 'user',
+          role: 'assistant',
           content: JSON.stringify({
             kind: 'airi-fact',
             id: fact.id,

@@ -33,13 +33,13 @@ describe('providerDeepSeek.createProvider chat options', () => {
   it('should not set thinking when thinkingMode is auto', async () => {
     const provider = await createDeepSeekChatProvider('auto')
 
-    expect(provider.chat('deepseek-chat')).not.toHaveProperty('thinking')
+    expect(provider.chat('deepseek-flash')).not.toHaveProperty('thinking')
   })
 
   it('should set thinking disabled when thinkingMode is disable', async () => {
     const provider = await createDeepSeekChatProvider('disable')
 
-    expect(provider.chat('deepseek-chat')).toMatchObject({
+    expect(provider.chat('deepseek-flash')).toMatchObject({
       thinking: { type: 'disabled' },
     })
   })
@@ -47,7 +47,7 @@ describe('providerDeepSeek.createProvider chat options', () => {
   it('should set thinking enabled when thinkingMode is enable', async () => {
     const provider = await createDeepSeekChatProvider('enable')
 
-    expect(provider.chat('deepseek-chat')).toMatchObject({
+    expect(provider.chat('deepseek-flash')).toMatchObject({
       thinking: { type: 'enabled' },
     })
   })
@@ -55,7 +55,7 @@ describe('providerDeepSeek.createProvider chat options', () => {
   it('should prioritize request reasoning over the provider setting', async () => {
     const provider = await createDeepSeekChatProvider('enable')
 
-    expect(provider.chat('deepseek-chat', { reasoning: 'disabled' })).toMatchObject({
+    expect(provider.chat('deepseek-flash', { reasoning: 'disabled' })).toMatchObject({
       thinking: { type: 'disabled' },
     })
   })

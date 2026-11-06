@@ -182,6 +182,51 @@ describe('memory store', () => {
     expect(memory.entries).toEqual([])
   })
 
+  it('writes a finished chat turn to the chat agent and skips a command', async () => {
+    const adds: Array<{ agent_id?: string, session_id?: string, messages?: Array<{ role?: string, content?: string }> }> = []
+    let failChatAdds = false
+    let failedWrites = 0
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      const body = typeof init?.body === 'string' ? init.body : ''
+      if (url.includes('/v3/conversation/add') && body.includes('"session_id":"session-1"')) {
+        if (failChatAdds) {
+          failedWrites += 1
+          throw new Error('MemoryCore request failed.')
+        }
+        adds.push(JSON.parse(body) as (typeof adds)[number])
+      }
+      return gateway.fetch(input, init)
+    })
+    const memory = createStore()
+    await memory.ready()
+    const turn = {
+      sessionId: 'session-1',
+      personaId: 'card-1',
+      assistantText: 'Long-term memory. You keep it yourself.\nThe memory index is empty.\n\nTea is a good drink.',
+      timestamp: '2026-11-01T00:00:00.000Z',
+    }
+
+    expect(memory.recordChatTurn({ ...turn, turnId: 'turn-command', userText: '/help' })).toBe(false)
+    expect(memory.recordChatTurn({ ...turn, turnId: 'turn-tea', userText: 'Ada likes tea.' })).toBe(true)
+    expect(memory.recordChatTurn({ ...turn, turnId: 'turn-tea', userText: 'Ada likes tea.' })).toBe(false)
+    await vi.waitFor(() => expect(adds).toHaveLength(1))
+
+    expect(adds[0]?.agent_id).toBe('card-1')
+    expect(adds[0]?.session_id).toBe('session-1')
+    expect(adds[0]?.messages?.[0]).toMatchObject({ role: 'user', content: 'Ada likes tea.' })
+    expect(adds[0]?.messages?.[1]).toMatchObject({ role: 'assistant', content: 'Tea is a good drink.' })
+    expect(memory.serviceError).toBe('')
+    expect(memory.entries).toEqual([])
+
+    failChatAdds = true
+    expect(memory.recordChatTurn({ ...turn, turnId: 'turn-fail', userText: 'The garden needs water.' })).toBe(true)
+    await vi.waitFor(() => expect(failedWrites).toBe(1))
+
+    expect(memory.serviceError).toBe('')
+    expect(memory.serviceRead).toBe('ready')
+  })
+
   it('reports an error when the service settings are incomplete', async () => {
     localStorage.removeItem('memory/service-team-id')
     const memory = createStore()
