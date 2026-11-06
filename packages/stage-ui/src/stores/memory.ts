@@ -6,12 +6,13 @@ import type { MemoryCallTurn } from './memory-layers'
 
 import { errorMessageFrom } from '@moeru/std'
 import { useLocalStorageManualReset } from '@proj-airi/stage-shared/composables'
-import { agentIdForEntry, bindMemoryScope, confirmIdentityLink, conversationContentHash, createChatTurnQueue, createMemoryClient, createRecallBuffer, createRemoteMemoryStorage, createWriteOutbox, defaultRecallBudget, deleteExactMessages, deleteLayerRecord, deliverConversation, formatRecall, GENERAL_AGENT_ID, isForgetPhrase, localScopeSessionId, memoryClientEnv, mergeRecall, parseSceneBinding, readCallTurns, readIdentityMap, readMemoryClientConfig, readMemoryLayers, resolveLocalAccountId, resolveMemoryScope, sanitizeScopeId } from '@proj-airi/tencentdb-memory'
+import { agentIdForEntry, bindMemoryScope, confirmIdentityLink, conversationContentHash, createChatTurnQueue, createMemoryClient, createRecallBuffer, createRemoteMemoryStorage, createWriteOutbox, defaultRecallBudget, deleteExactMessages, deleteLayerRecord, deliverConversation, formatRecall, GENERAL_AGENT_ID, isForgetPhrase, localScopeSessionId, memoryClientEnv, mergeRecall, parseSceneBinding, readCallTurns, readIdentityMap, readMemoryClientConfig, readMemoryLayers, resolveLocalAccountId, resolveMemoryScope, sanitizeScopeId, searchLongTerm } from '@proj-airi/tencentdb-memory'
 import { useBroadcastChannel } from '@vueuse/core'
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 
 import { EMPTY_MEMORY_LAYERS, viewCallTurn, viewMemoryLayers } from './memory-layers'
+import { memoryTransport } from './memory-transport'
 
 const serviceConfigError = 'Set the service address.'
 
@@ -188,7 +189,8 @@ export const useMemoryStore = defineStore('memory', () => {
       return
     }
 
-    memoryClient = createMemoryClient(config.config)
+    const fetchImpl = memoryTransport()
+    memoryClient = createMemoryClient(config.config, fetchImpl ? { fetch: fetchImpl } : {})
     remote = createRemoteMemoryStorage(memoryClient)
     storages.set(scopeKey(scope), remote)
     serviceError.value = ''
@@ -455,7 +457,9 @@ export const useMemoryStore = defineStore('memory', () => {
   }
 
   /**
-   * Recall for the next prompt. Recent turns fill the gap until search returns the same text.
+   * Recall for the next prompt.
+   * Recent turns are the current session only. They fill the gap until search returns the same text.
+   * Long-term search uses the team, the user, and the agent. It does not send the session id.
    * A search failure still keeps the recent turns. The call does not throw.
    */
   async function prepareRecall(input: { sessionId: string, personaId: string, query: string, binding?: string, speakerId?: string }) {
@@ -565,10 +569,9 @@ export const useMemoryStore = defineStore('memory', () => {
     if (!client || text === '')
       return []
     try {
-      const found = await bindMemoryScope(client, scope).searchConversation({
+      const found = await searchLongTerm(bindMemoryScope(client, scope), {
         query: text,
         agentId: scope.agentId,
-        sessionId: scope.sessionId,
         limit: defaultRecallBudget.limit,
       })
       return found.messages.map(hit => ({

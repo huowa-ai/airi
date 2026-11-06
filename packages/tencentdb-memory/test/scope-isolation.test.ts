@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { bindMemoryScope, createMemoryClient } from '../src/memory-client'
+import { searchLongTerm } from '../src/memory-core-contract'
 import { resolveMemoryScope } from '../src/memory-scope'
 import { createRemoteMemoryStorage } from '../src/remote-memory'
 
@@ -191,5 +192,72 @@ describe('scope isolation on a fake gateway', () => {
     expect(adaAtoms.items.map(item => item.content)).toEqual(['Ada private atom'])
     expect(groupAdaAtoms.items.map(item => item.content)).toEqual(['Ada group atom'])
     expect(groupBobAtoms.items.map(item => item.content)).toEqual(['Bob group atom'])
+  })
+
+  it('returns a fact from another session and keeps other users and agents out', async () => {
+    const gateway = isolationGateway()
+    const raw = createMemoryClient({
+      endpoint: 'http://127.0.0.1:8420',
+      teamId: 'unused',
+      userId: 'unused',
+      agentId: 'airi:general',
+      serviceId: 'default',
+      apiKey: 'local',
+    }, { fetch: gateway.fetchImpl })
+
+    const ada = resolveMemoryScope({ platform: 'discord', userId: 'ada', personaId: 'card-1', sessionId: 'session-a' })
+    const adaLater = resolveMemoryScope({ platform: 'discord', userId: 'ada', personaId: 'card-1', sessionId: 'session-b' })
+    const bob = resolveMemoryScope({ platform: 'discord', userId: 'bob', personaId: 'card-1', sessionId: 'session-bob' })
+    const otherCard = resolveMemoryScope({ platform: 'discord', userId: 'ada', personaId: 'card-2', sessionId: 'session-other' })
+    const fact = '我喜欢吃西瓜'
+
+    await bindMemoryScope(raw, ada).addConversation({
+      sessionId: ada.sessionId,
+      agentId: ada.agentId,
+      messages: [{ role: 'user', content: fact }],
+    })
+    await bindMemoryScope(raw, adaLater).addConversation({
+      sessionId: adaLater.sessionId,
+      agentId: adaLater.agentId,
+      messages: [{ role: 'user', content: '今天天气好' }],
+    })
+    await bindMemoryScope(raw, bob).addConversation({
+      sessionId: bob.sessionId,
+      agentId: bob.agentId,
+      messages: [{ role: 'user', content: fact }],
+    })
+    await bindMemoryScope(raw, otherCard).addConversation({
+      sessionId: otherCard.sessionId,
+      agentId: otherCard.agentId,
+      messages: [{ role: 'user', content: fact }],
+    })
+
+    const found = await searchLongTerm(bindMemoryScope(raw, adaLater), {
+      query: '西瓜',
+      agentId: adaLater.agentId,
+      limit: 5,
+    })
+    const bobFound = await searchLongTerm(bindMemoryScope(raw, bob), {
+      query: '西瓜',
+      agentId: bob.agentId,
+      limit: 5,
+    })
+    const otherFound = await searchLongTerm(bindMemoryScope(raw, otherCard), {
+      query: '西瓜',
+      agentId: otherCard.agentId,
+      limit: 5,
+    })
+
+    expect(ada.teamId).toBe(adaLater.teamId)
+    expect(ada.userId).toBe(adaLater.userId)
+    expect(ada.agentId).toBe(adaLater.agentId)
+    expect(ada.teamId).not.toBe(bob.teamId)
+    expect(ada.agentId).not.toBe(otherCard.agentId)
+    expect(found.messages.map(message => message.content)).toEqual([fact])
+    expect(found.messages.map(message => message.sessionId)).toEqual(['session-a'])
+    expect(bobFound.messages.map(message => message.sessionId)).toEqual(['session-bob'])
+    expect(otherFound.messages.map(message => message.sessionId)).toEqual(['session-other'])
+    expect(bobFound.messages.map(message => message.content)).not.toContain('今天天气好')
+    expect(otherFound.messages.map(message => message.content)).not.toContain('今天天气好')
   })
 })

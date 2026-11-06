@@ -16,6 +16,8 @@ import {
   unknown,
 } from 'valibot'
 
+import { defaultMemoryServiceId } from './client-config'
+
 const addPath = '/v3/conversation/add'
 const searchPath = '/v3/conversation/search'
 const queryPath = '/v3/conversation/query'
@@ -66,6 +68,10 @@ export interface AddConversationResult {
 export interface SearchConversationInput extends MemoryCallScope {
   query: string
   limit?: number
+  /**
+   * Limits the search to one session.
+   * Omit it for long-term recall. The gateway then searches every session in the team, the user, and the agent.
+   */
   sessionId?: string
   agentId?: string
 }
@@ -620,11 +626,27 @@ async function post<TSchema, TResult>(
   return map(parsed.output)
 }
 
-function headers(config: MemoryClientConfig) {
+/**
+ * Headers for one MemoryCore call.
+ * Node sends `x-tdai-service-id` on every call. The gateway returns 401 when it is missing.
+ * A browser document omits that header when the id is `default`. The gateway CORS list allows only `Content-Type` and `Authorization`.
+ * Electron main adds the header again and performs the call.
+ */
+export function serviceIdHeader(serviceId: string, browser: boolean): Record<string, string> {
+  if (browser && serviceId === defaultMemoryServiceId)
+    return {}
+  return { 'x-tdai-service-id': serviceId }
+}
+
+function browserDocument() {
+  return typeof (globalThis as { document?: unknown }).document !== 'undefined'
+}
+
+function headers(config: MemoryClientConfig): Record<string, string> {
   return {
     'content-type': 'application/json',
     'authorization': `Bearer ${config.apiKey}`,
-    'x-tdai-service-id': config.serviceId,
+    ...serviceIdHeader(config.serviceId, browserDocument()),
   }
 }
 

@@ -26,6 +26,7 @@ import App from './App.vue'
 import { electronWindowBackdropUpdate } from '../shared/eventa'
 import { nestFullscreenSurfaces } from './components/fullscreen/surfaces'
 import { createWindowBackdropHost } from './composables/window-backdrop'
+import { installMemoryGatewayTransport } from './memory-gateway'
 import { i18n } from './modules/i18n'
 import { resolveRendererWindowContext } from './window-context'
 
@@ -62,6 +63,8 @@ for (const [name, source] of Object.entries({
   'modules:mcp': () => import('./pages/settings/modules/mcp.search'),
 }))
   settingsSearch.provide(name, source)
+
+installMemoryGatewayTransport()
 
 const windowContext = resolveRendererWindowContext()
 const pinia = createPinia()

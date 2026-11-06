@@ -32,9 +32,9 @@ Set these variables in the environment. Do not commit them.
 - `TENCENTDB_MEMORY_USER_ID` is the default user when a call omits one. A stage call sends the speaker id.
 - `TENCENTDB_MEMORY_AGENT_ID` is the default agent id for a v3 call.
 - `TENCENTDB_MEMORY_API_KEY` is the bearer token. The gateway returns 401 when the header is missing. An empty value sends `local`.
-- `TENCENTDB_MEMORY_SERVICE_ID` is `x-tdai-service-id`. The gateway returns 401 when the header is missing. An empty value sends `default`.
+- `TENCENTDB_MEMORY_SERVICE_ID` is the service id. An empty value is `default`. Node sends it as `x-tdai-service-id`.
 
-The URL must not carry a user name, a password, a query, or a path. The client always sends `Authorization` and `x-tdai-service-id`. It does not send `x-request-id`. `timestamp` on a conversation message is an ISO-8601 UTC string. The gateway rejects a number.
+The URL must not carry a user name, a password, a query, or a path. Node sends `Authorization` and `x-tdai-service-id`. It does not send `x-request-id`. `timestamp` on a conversation message is an ISO-8601 UTC string. The gateway rejects a number.
 
 When the endpoint, the team id, the user id, and the agent id are set, this command adds one L0 line and searches for it:
 
@@ -44,9 +44,13 @@ pnpm -F @proj-airi/tencentdb-memory smoke:l0
 
 ## Call the gateway from a browser
 
-The settings page calls the gateway from the browser. Set `server.corsOrigins` to the page origin. Allow the headers `Content-Type`, `Authorization`, and `x-tdai-service-id`.
+The gateway requires `x-tdai-service-id`. It returns 401 when the header is missing. It does not read the id from the query or the body. `default` is not a substitute for the header.
 
-A gateway that allows only `Content-Type` and `Authorization` blocks the page. The browser sends `x-tdai-service-id` on every call.
+The gateway CORS list allows `Content-Type` and `Authorization`. It does not allow `x-tdai-service-id`. A browser preflight fails when the page sends that header.
+
+A page omits the header when the service id is `default`. The preflight can then pass. The gateway still returns 401, because the header is missing. A service id other than `default` is sent from the page. That preflight fails until the gateway allows `x-tdai-service-id`.
+
+Electron does not send the call from the page. The main process adds `x-tdai-service-id` and calls the gateway. Set `server.corsOrigins` when a browser page calls the gateway directly. Allow `x-tdai-service-id` in that list when the page sends a service id other than `default`.
 
 ## Chat turns and manual facts
 
@@ -70,7 +74,7 @@ The v3 catalog has `atomic/update`, `atomic/query`, `atomic/search`, and `atomic
 
 An identity map can point several platform identities at one private team. The map starts empty. A link is stored only after confirmation. The resolver does not merge accounts by itself. Cross-group sharing stays off. The request type has a hook for a later opt-in, and the resolver does not call it.
 
-Recall keeps a few recent turns for that scope until search returns the same text. The merged list is ranked by relevance, then time. It stops at 5 hits and 800 characters.
+Recall keeps a few recent turns for the current session until search returns the same text. Long-term search uses the team, the user, and the agent. It does not send a session id. A fact from an earlier chat session stays available in a new session for that user and character. Another user or another character stays out. The merged list is ranked by relevance, then time. It stops at 5 hits and 800 characters.
 
 A failed conversation write stays in a local queue. The queue retries with a longer wait, up to 30 seconds. A turn id that already succeeded is not sent again. `conversation/add` does not take a caller message id. Before a retry, the client reads that scope. When the same role and content are already there, the retry skips the write.
 

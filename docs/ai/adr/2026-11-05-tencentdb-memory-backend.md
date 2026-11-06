@@ -69,6 +69,8 @@ Tools, Settings, and a later voice hook call `useMemoryStore`. The store calls o
 
 The v3 data plane takes `team_id`, `agent_id`, and `user_id` in the body or in `x-tdai-*` headers. This client sends them in the body.
 
+Long-term conversation search does not send `session_id`. The gateway then searches every session for that team, user, and agent. A present `session_id` keeps only that session. The recent-turn buffer stays on the current session.
+
 Persona isolation matches the store today: a card reads its facts and the general facts. A private scope and a group scope do not share those facts. The session id does not split one scope's fact list. Cross-group sharing stays off. The resolver accepts a typed hook and does not call it.
 
 ### Record, source, and media refs
@@ -129,9 +131,9 @@ A video frame is not a current attachment type. A later frame can use an image `
 
 `TENCENTDB_MEMORY_ENDPOINT` is an `http` or `https` origin. `http://127.0.0.1:8420` is the local gateway. A server origin is valid. The URL must not include a user name, a password, a query, a hash, or a path.
 
-`TENCENTDB_MEMORY_API_KEY` and `TENCENTDB_MEMORY_SERVICE_ID` are required on the wire. A live v3 gateway returns 401 when either header is missing, including when gateway auth is disabled. An empty setting sends the key `local` and the service id `default`. Those are the local gateway values. The client always sends `Authorization: Bearer` and `x-tdai-service-id`. It does not send `x-request-id`. Logs and error text omit the key and the endpoint.
+`TENCENTDB_MEMORY_API_KEY` and `TENCENTDB_MEMORY_SERVICE_ID` are required on the wire for a Node caller. A live v3 gateway returns 401 when either header is missing, including when gateway auth is disabled. The gateway does not read the service id from the query or the body. An empty setting sends the key `local` and the service id `default`. Those are the local gateway values. Node sends `Authorization: Bearer` and `x-tdai-service-id`. It does not send `x-request-id`. Logs and error text omit the key and the endpoint.
 
-The page calls the gateway from the browser. The gateway must allow the page origin in `server.corsOrigins`. It must allow the headers `Content-Type`, `Authorization`, and `x-tdai-service-id`. A gateway that allows only `Content-Type` and `Authorization` blocks the browser, because this client sends `x-tdai-service-id` on every call.
+The gateway CORS list allows `Content-Type` and `Authorization`. It does not allow `x-tdai-service-id`. A browser page omits that header when the service id is `default`, so the preflight can pass. The gateway still returns 401, because the header is missing. A service id other than `default` is sent from the page. That call needs `server.corsOrigins` and an allow-list that includes `x-tdai-service-id`. Electron does not send the call from the page. The main process adds the header and calls the gateway.
 
 `timestamp` on `POST /v3/conversation/add` is an ISO-8601 UTC string, such as `2026-11-01T00:00:00Z`. The gateway returns 400 for a number.
 

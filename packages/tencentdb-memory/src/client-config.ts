@@ -23,6 +23,7 @@ const requiredEnv = [
 /**
  * Local gateway values.
  * A v3 call without `Authorization` or `x-tdai-service-id` returns 401, including when gateway auth is disabled.
+ * The gateway does not read the service id from the query or the body. `default` is not a substitute for the header.
  */
 export const defaultMemoryApiKey = 'local'
 export const defaultMemoryServiceId = 'default'
@@ -35,7 +36,7 @@ export interface MemoryClientConfig {
   userId: string
   /** Default `agent_id` when a call does not pass one. */
   agentId: string
-  /** Sent as `x-tdai-service-id`. An empty setting becomes {@link defaultMemoryServiceId}. */
+  /** Service id. An empty setting becomes {@link defaultMemoryServiceId}. Node sends it as `x-tdai-service-id`. */
   serviceId: string
   /** Sent as `Authorization: Bearer`. An empty setting becomes {@link defaultMemoryApiKey}. */
   apiKey: string

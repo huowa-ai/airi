@@ -30,6 +30,7 @@ export {
   bindMemoryScope,
   createMemoryClient,
   MemoryClientError,
+  serviceIdHeader,
 } from './memory-client'
 export type {
   AddConversationInput,
@@ -65,6 +66,7 @@ export {
   deleteExactMessages,
   factRecordRole,
   memoryCoreCapabilities,
+  searchLongTerm,
 } from './memory-core-contract'
 export type { MemoryCoreCapabilities } from './memory-core-contract'
 export {
