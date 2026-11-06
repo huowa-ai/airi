@@ -256,6 +256,15 @@ async function deleteMessages(client: MemoryV3Client, agentId: string, messageId
   await client.deleteConversation({ agentId, messageIds })
 }
 
+/**
+ * Agent ids that own facts for this team and user.
+ * The first id is {@link GENERAL_AGENT_ID}. The rest come from the fact directory.
+ */
+export async function readFactAgentIds(client: MemoryV3Client) {
+  const directory = await readDirectory(client)
+  return [GENERAL_AGENT_ID, ...directory.personas]
+}
+
 async function readDirectory(client: MemoryV3Client): Promise<DirectoryState> {
   const messages = await queryAll(client, directoryAgentId, directorySessionId)
   const parsed = messages.flatMap((message) => {

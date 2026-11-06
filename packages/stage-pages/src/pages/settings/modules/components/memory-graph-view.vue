@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import type { ForceGraph3DInstance } from '3d-force-graph'
 
-import type { MemoryGraphLink, MemoryGraphNode } from '../memory-graph-model'
+import type { MemoryGraphLayer, MemoryGraphLink, MemoryGraphNode } from '../memory-graph-model'
 
 import ForceGraph3D from '3d-force-graph'
 
 import { onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue'
+
+import { memoryLayerColor } from '../memory-graph-model'
 
 const props = defineProps<{
   nodes: readonly MemoryGraphNode[]
@@ -13,7 +15,7 @@ const props = defineProps<{
   selectedId: string
   derivedLabel: string
   backgroundColor: string
-  nodeColor: string
+  hue: number
   linkColor: string
 }>()
 
@@ -57,6 +59,18 @@ function nodeId(node: object) {
   return ''
 }
 
+function nodeLayer(node: object): MemoryGraphLayer {
+  if ('layer' in node && (node.layer === 'L0' || node.layer === 'L1' || node.layer === 'L2' || node.layer === 'L3'))
+    return node.layer
+  return 'L0'
+}
+
+function nodeSize(node: object) {
+  const layer = nodeLayer(node)
+  const base = layer === 'L3' ? 8 : layer === 'L2' ? 4 : layer === 'L0' ? 2.4 : 1.7
+  return nodeId(node) === props.selectedId ? base * 1.6 : base
+}
+
 function resize() {
   const element = root.value
   if (!element || !graph)
@@ -76,18 +90,18 @@ onMounted(() => {
       .cooldownTicks(0)
       .warmupTicks(0)
       .nodeLabel(node => nodeText(node))
-      .nodeColor(() => props.nodeColor)
-      .nodeVal(node => nodeId(node) === props.selectedId ? 6 : 2)
+      .nodeColor(node => memoryLayerColor(nodeLayer(node), props.hue))
+      .nodeVal(node => nodeSize(node))
       .linkLabel(() => props.derivedLabel)
       .linkColor(props.linkColor)
-      .linkWidth(0.6)
-      .linkOpacity(0.7)
+      .linkWidth(0.4)
+      .linkOpacity(0.45)
       .onNodeClick((node) => {
         const id = nodeId(node)
         if (id)
           emit('select', id)
       })
-      .cameraPosition({ x: 0, y: 24, z: 110 }, { x: 0, y: 0, z: 0 }, 0)
+      .cameraPosition({ x: 18, y: 28, z: 132 }, { x: 0, y: 2, z: 0 }, 0)
     applyData()
     resize()
     observer = new ResizeObserver(() => resize())
@@ -98,10 +112,11 @@ onMounted(() => {
   }
 })
 
-watch(() => [props.nodes, props.links, props.selectedId, props.derivedLabel], () => {
+watch(() => [props.nodes, props.links, props.selectedId, props.derivedLabel, props.hue], () => {
   if (!graph)
     return
-  graph.nodeVal(node => nodeId(node) === props.selectedId ? 6 : 2)
+  graph.nodeColor(node => memoryLayerColor(nodeLayer(node), props.hue))
+  graph.nodeVal(node => nodeSize(node))
   graph.linkLabel(() => props.derivedLabel)
   applyData()
 })

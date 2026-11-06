@@ -1,13 +1,15 @@
-import type { MemoryStorage } from '@proj-airi/tencentdb-memory'
+import type { MemoryStorage, MemoryV3Client } from '@proj-airi/tencentdb-memory'
 
 import type { MemoryEntry, MemoryWrite } from '../types/memory'
 
 import { errorMessageFrom } from '@moeru/std'
 import { useLocalStorageManualReset } from '@proj-airi/stage-shared/composables'
-import { createMemoryClient, createRemoteMemoryStorage, GENERAL_AGENT_ID, memoryClientEnv, readMemoryClientConfig } from '@proj-airi/tencentdb-memory'
+import { createMemoryClient, createRemoteMemoryStorage, GENERAL_AGENT_ID, memoryClientEnv, readMemoryClientConfig, readMemoryLayers } from '@proj-airi/tencentdb-memory'
 import { useBroadcastChannel } from '@vueuse/core'
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
+
+import { EMPTY_MEMORY_LAYERS, viewMemoryLayers } from './memory-layers'
 
 /** The live list is empty until a MemoryCore read for this service identity succeeds. */
 const NO_ENTRIES: MemoryEntry[] = []
@@ -42,7 +44,9 @@ export const useMemoryStore = defineStore('memory', () => {
   const serviceError = ref('')
   const serviceRead = ref<MemoryServiceRead>('loading')
   const entries = ref<MemoryEntry[]>(NO_ENTRIES)
+  const layers = ref(EMPTY_MEMORY_LAYERS)
   let remote: MemoryStorage | undefined
+  let memoryClient: MemoryV3Client | undefined
   let serviceGeneration = 0
 
   function clearLiveEntries() {
@@ -52,8 +56,10 @@ export const useMemoryStore = defineStore('memory', () => {
   function connectService() {
     serviceGeneration += 1
     clearLiveEntries()
+    layers.value = EMPTY_MEMORY_LAYERS
     if (!serviceEnabled.value) {
       remote = undefined
+      memoryClient = undefined
       serviceError.value = ''
       serviceRead.value = 'off'
       return
@@ -69,12 +75,14 @@ export const useMemoryStore = defineStore('memory', () => {
     })
     if (!config.configured) {
       remote = undefined
+      memoryClient = undefined
       serviceError.value = 'Set the service address, the team id, and the user id.'
       serviceRead.value = 'error'
       return
     }
 
-    remote = createRemoteMemoryStorage(createMemoryClient(config.config))
+    memoryClient = createMemoryClient(config.config)
+    remote = createRemoteMemoryStorage(memoryClient)
     serviceError.value = ''
     serviceRead.value = 'loading'
   }
@@ -85,29 +93,33 @@ export const useMemoryStore = defineStore('memory', () => {
   function load() {
     const generation = serviceGeneration
     const client = remote
+    const raw = memoryClient
     pendingLoad = pendingLoad.catch(() => {}).then(async () => {
       if (generation !== serviceGeneration)
         return
-      if (!serviceEnabled.value || !client) {
+      if (!serviceEnabled.value || !client || !raw) {
         clearLiveEntries()
+        layers.value = EMPTY_MEMORY_LAYERS
         serviceRead.value = serviceEnabled.value ? 'error' : 'off'
         return
       }
-      try {
-        const listed = await client.list()
-        if (generation !== serviceGeneration)
-          return
-        entries.value = listed
+      const [listed, snapshot] = await Promise.all([
+        client.list().then(value => ({ ok: true as const, value }), error => ({ ok: false as const, error })),
+        readMemoryLayers(raw),
+      ])
+      if (generation !== serviceGeneration)
+        return
+      layers.value = viewMemoryLayers(snapshot)
+      if (listed.ok) {
+        entries.value = listed.value
         serviceError.value = ''
-        serviceRead.value = 'ready'
       }
-      catch (error) {
-        if (generation !== serviceGeneration)
-          return
+      else {
         clearLiveEntries()
-        serviceError.value = publicServiceError(error)
-        serviceRead.value = 'error'
+        serviceError.value = publicServiceError(listed.error)
       }
+      const layerCount = layers.value.atoms.items.length + layers.value.scenes.items.length + layers.value.cores.items.length
+      serviceRead.value = !listed.ok && layerCount === 0 ? 'error' : 'ready'
     })
     return pendingLoad
   }
@@ -246,7 +258,9 @@ export const useMemoryStore = defineStore('memory', () => {
       await client.clear(Date.now()).catch(() => {})
     serviceEnabled.reset()
     remote = undefined
+    memoryClient = undefined
     clearLiveEntries()
+    layers.value = EMPTY_MEMORY_LAYERS
     serviceError.value = ''
     serviceRead.value = 'off'
     await publish([])
@@ -274,6 +288,7 @@ export const useMemoryStore = defineStore('memory', () => {
     serviceError,
     serviceRead,
     entries: computed(() => entries.value),
+    layers,
     listFacts,
     ready,
     indexFor,

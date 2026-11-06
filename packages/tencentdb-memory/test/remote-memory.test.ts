@@ -60,6 +60,18 @@ function gateway(): MemoryV3Client & { rows: Row[] } {
       }
       return { deletedCount: before - rows.length }
     },
+    async queryAtomic() {
+      return { items: [], total: 0 }
+    },
+    async listScenarios() {
+      return { entries: [], total: 0 }
+    },
+    async readScenario(input) {
+      return { path: input.path, content: null }
+    },
+    async readCore() {
+      return { content: null }
+    },
   }
 }
 

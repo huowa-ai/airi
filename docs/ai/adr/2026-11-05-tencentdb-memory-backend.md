@@ -101,13 +101,19 @@ A derived line on the view is not an L1 atom and not a stored semantic relation.
 
 The whale picture is an approved direction. The mesh stays approximate. Fine shape is a later pass. This page uses `3d-force-graph` as its renderer. A later pull request can tune that scene. It does not replace the renderer.
 
+The layout has four zones, even when a zone has few records. L3 sits in the head. L2 sits on the back. L1 fills the body, off the center line. L0 fills the tail and the fins when higher layers are present. When only L0 facts exist, those facts use the head, the tail, and the fins. One fact stays in the body.
+
 The page is a settings route, on the same pattern as `packages/stage-pages/src/pages/settings/modules/memory-long-term.vue`. It uses `layout: settings`. Web padding and scroll stay in `packages/stage-layouts/src/layouts/settings.vue`. Electron uses `apps/stage-tamagotchi/src/renderer/layouts/settings.vue`. The route is a link from the long-term memory page. The page does not cover the character stage (`DESIGN.md`).
 
 The page reads the live list from `useMemoryStore`. That list is the MemoryCore read for the current team and user. When the service is off, or the read fails, the graph has no nodes and the page shows that status. The page does not read the device repository.
 
 The page also shows the same facts as text. Every drawn line is a derived layout line, and the page says so. The page does not write that line back to MemoryCore. It does not draw a recall pulse. Same-turn recall is a later pass.
 
-L0 facts are the service list. L1, L2, and L3 stay absent until a query for that layer returns rows. This page does not call those routes.
+L0 facts are the service list. The page also reads `POST /v3/atomic/query`, `POST /v3/scenario/ls`, `POST /v3/scenario/read`, and `POST /v3/core/read` for each fact agent. The legend lists a layer only when that read returns a row. An empty layer is omitted. A failed layer shows the error and no invented rows. The page does not call update, write, or delete on those routes.
+
+L3 is one persona node per character. A markdown heading splits the detail into sections. It does not add a node. L2 is one node per scene file. A directory path is not a node.
+
+L0 and L1 follow the team, the user, and the character. L2 and L3 follow the team and the character only. The gateway scope is `team:<team id>|agent:<agent id>`. A second user in that team and character receives the same scenes and the same persona. The detail says so. It does not present those records as this user's private facts. Per-user isolation needs a separate character id or a separate team id for each user. That change is a later pull request.
 
 Strings go in the English source under `packages/i18n` only. Reduced motion does not start `3d-force-graph`. The fact list stays on the page. Colors for the graph use the theme hue.
 
@@ -123,7 +129,11 @@ A video frame is not a current attachment type. A later frame can use an image `
 
 `TENCENTDB_MEMORY_ENDPOINT` is an `http` or `https` origin. `http://127.0.0.1:8420` is the local gateway. A server origin is valid. The URL must not include a user name, a password, a query, a hash, or a path.
 
-`TENCENTDB_MEMORY_API_KEY` and `TENCENTDB_MEMORY_SERVICE_ID` are optional in this client. The reviewed catalog says the bearer token is not required when the gateway API key is unset, and the data plane also wants `x-tdai-service-id`. The client sends `Authorization: Bearer` only when the key is set, and `x-tdai-service-id` only when the service id is set. Logs and error text omit the key and the endpoint.
+`TENCENTDB_MEMORY_API_KEY` and `TENCENTDB_MEMORY_SERVICE_ID` are required on the wire. A live v3 gateway returns 401 when either header is missing, including when gateway auth is disabled. An empty setting sends the key `local` and the service id `default`. Those are the local gateway values. The client always sends `Authorization: Bearer` and `x-tdai-service-id`. It does not send `x-request-id`. Logs and error text omit the key and the endpoint.
+
+The page calls the gateway from the browser. The gateway must allow the page origin in `server.corsOrigins`. It must allow the headers `Content-Type`, `Authorization`, and `x-tdai-service-id`. A gateway that allows only `Content-Type` and `Authorization` blocks the browser, because this client sends `x-tdai-service-id` on every call.
+
+`timestamp` on `POST /v3/conversation/add` is an ISO-8601 UTC string, such as `2026-11-01T00:00:00Z`. The gateway returns 400 for a number.
 
 The process builds the client only when the endpoint and the three ids are set. It does not call the client during announce. A built client is not proof that the gateway accepts the key.
 
@@ -145,7 +155,7 @@ Each stage is its own later pull request. None of them is done here.
 
 The module connects to `ws://localhost:6121/ws` unless `AIRI_URL` is set. It announces `tencentdb-memory` with an empty `possibleEvents` list. It does not send `input:text`. The v3 client implements `POST /v3/conversation/add` and `POST /v3/conversation/search` only. Tests use a fake WebSocket server and a fake HTTP server.
 
-L1 routes are not called. The reviewed catalog lists `atomic/update`, `atomic/query`, `atomic/search`, and `atomic/delete` for facts. `atomic/update` returns `version` as a string such as `v2`. Query and search return `version` as a number. The adapter must accept both. If `atomic/update` rejects a new id, store one scenario file per entry at `memories/<id>.json` instead. Both stay inside MemoryCore. That choice waits on a gateway test. It is not decided here.
+The graph reads `atomic/query`, `scenario/ls`, `scenario/read`, and `core/read`. It does not call `atomic/update`. The reviewed catalog lists `atomic/update`, `atomic/query`, `atomic/search`, and `atomic/delete` for facts. `atomic/update` returns `version` as a string such as `v2`. Query and search return `version` as a number. The adapter must accept both. If `atomic/update` rejects a new id, store one scenario file per entry at `memories/<id>.json` instead. Both stay inside MemoryCore. That choice waits on a gateway test. It is not decided here.
 
 ## Later pull requests
 
@@ -194,7 +204,7 @@ The settings page can turn the memory service on. When the service is on, the ch
 
 The page calls MemoryCore over HTTP. The address, the team id, the user id, the service id, and the optional API key are device settings. The key is not in the source bundle. A later channel RPC can move the key off the page. That move is still open.
 
-Facts are L0 messages in session `airi:facts`. The agent id is the card id, or `airi:general`. The message body is a JSON fact. L1 extraction is a separate gateway pipeline. A local run with no model key returned no L1 items.
+Facts are L0 messages in session `airi:facts`. The agent id is the card id, or `airi:general`. The message body is a JSON fact. L1 extraction is a separate gateway pipeline. The graph reads the rows that pipeline stored. It does not start that pipeline.
 
 ## Unresolved
 
@@ -205,5 +215,6 @@ Facts are L0 messages in session `airi:facts`. The agent id is the card id, or `
 - Will MemoryCore add a client watch, or must the view poll?
 - What is the frame cost of `3d-force-graph` on a large fact list?
 - How is a video frame captured, given that chat attachments have no video type?
-- What is the whale mesh? Shape direction is approved. Geometry is approximate.
+- What is the whale mesh? Shape direction is approved. The zones are the head, the body, the back, the tail, and the fins. Geometry stays approximate.
+- How does one user keep a private L2 scene and L3 persona? The gateway scopes those layers by team and character, not by user. A later change can give each user a character id or a team id.
 - When does same-turn recall highlight a fact without drawing a fake pulse?

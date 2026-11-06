@@ -19,11 +19,16 @@ const addPath = '/v3/conversation/add'
 const searchPath = '/v3/conversation/search'
 const queryPath = '/v3/conversation/query'
 const deletePath = '/v3/conversation/delete'
+const atomicQueryPath = '/v3/atomic/query'
+const scenarioListPath = '/v3/scenario/ls'
+const scenarioReadPath = '/v3/scenario/read'
+const coreReadPath = '/v3/core/read'
 
 export interface ConversationMessageInput {
   role: 'user' | 'assistant'
   content: string
-  timestamp?: number
+  /** ISO-8601 UTC time, such as `2026-11-01T00:00:00Z`. The gateway rejects a number. */
+  timestamp?: string
 }
 
 export interface AddConversationInput {
@@ -84,15 +89,91 @@ export interface DeleteConversationResult {
   deletedCount: number
 }
 
+export interface AtomicRecord {
+  id: string
+  version: string | number
+  type: string
+  content: string
+  background?: string
+  createdAt?: string
+  updatedAt?: string
+  teamId?: string
+  userId?: string
+  agentId?: string
+}
+
+export interface QueryAtomicInput {
+  agentId?: string
+  limit?: number
+  offset?: number
+  type?: string
+}
+
+export interface QueryAtomicResult {
+  items: AtomicRecord[]
+  total: number
+}
+
+export interface ScenarioRecord {
+  path: string
+  summary?: string
+  version: string | number
+  createdAt?: string
+  updatedAt?: string
+  teamId?: string
+  agentId?: string
+}
+
+export interface ListScenariosInput {
+  agentId?: string
+  pathPrefix?: string
+}
+
+export interface ListScenariosResult {
+  entries: ScenarioRecord[]
+  total: number
+}
+
+export interface ReadScenarioInput {
+  path: string
+  agentId?: string
+}
+
+export interface ReadScenarioResult {
+  path: string
+  version?: string | number
+  content: string | null
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface CoreRecord {
+  content: string | null
+  version?: string | number
+  teamId?: string
+  agentId?: string
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface ReadCoreInput {
+  agentId?: string
+}
+
 /**
- * L0 calls on a MemoryCore v3 gateway.
+ * L0 writes and L0–L3 reads on a MemoryCore v3 gateway.
  * The client sends `team_id`, `agent_id`, and `user_id` on every call.
+ * It does not write L1, L2, or L3.
  */
 export interface MemoryV3Client {
   addConversation: (input: AddConversationInput) => Promise<AddConversationResult>
   searchConversation: (input: SearchConversationInput) => Promise<SearchConversationResult>
   queryConversation: (input: QueryConversationInput) => Promise<QueryConversationResult>
   deleteConversation: (input: DeleteConversationInput) => Promise<DeleteConversationResult>
+  queryAtomic: (input: QueryAtomicInput) => Promise<QueryAtomicResult>
+  listScenarios: (input: ListScenariosInput) => Promise<ListScenariosResult>
+  readScenario: (input: ReadScenarioInput) => Promise<ReadScenarioResult>
+  readCore: (input: ReadCoreInput) => Promise<CoreRecord>
 }
 
 export interface MemoryV3ClientOptions {
@@ -152,6 +233,56 @@ const queryDataSchema = object({
 
 const deleteDataSchema = object({
   deleted_count: number(),
+})
+
+const atomicItemSchema = object({
+  id: string(),
+  version: optional(union([string(), number()])),
+  type: string(),
+  background: optional(string()),
+  content: string(),
+  created_at: optional(string()),
+  updated_at: optional(string()),
+  team_id: optional(string()),
+  user_id: optional(string()),
+  agent_id: optional(string()),
+})
+
+const atomicQuerySchema = object({
+  items: array(atomicItemSchema),
+  total: number(),
+})
+
+const scenarioEntrySchema = object({
+  path: string(),
+  summary: optional(string()),
+  version: union([string(), number()]),
+  team_id: optional(string()),
+  agent_id: optional(string()),
+  created_at: optional(string()),
+  updated_at: optional(string()),
+})
+
+const scenarioListSchema = object({
+  entries: array(scenarioEntrySchema),
+  total: number(),
+})
+
+const scenarioReadSchema = object({
+  path: string(),
+  version: optional(nullable(union([string(), number()]))),
+  content: nullable(string()),
+  created_at: optional(nullable(string())),
+  updated_at: optional(nullable(string())),
+})
+
+const coreReadSchema = object({
+  content: nullable(string()),
+  version: optional(nullable(union([string(), number()]))),
+  team_id: optional(nullable(string())),
+  agent_id: optional(nullable(string())),
+  created_at: optional(nullable(string())),
+  updated_at: optional(nullable(string())),
 })
 
 /**
@@ -246,6 +377,78 @@ export function createMemoryClient(config: MemoryClientConfig, options: MemoryV3
         deletedCount: data.deleted_count,
       }))
     },
+
+    async queryAtomic(input) {
+      const agentId = input.agentId ?? config.agentId
+      assertAgentId(atomicQueryPath, agentId)
+      assertPage(atomicQueryPath, input.limit, input.offset)
+
+      return post(fetchImpl, config, secrets, timeoutMs, atomicQueryPath, {
+        team_id: config.teamId,
+        agent_id: agentId,
+        user_id: config.userId,
+        ...(input.type === undefined ? {} : { type: input.type }),
+        ...(input.limit === undefined ? {} : { limit: input.limit }),
+        ...(input.offset === undefined ? {} : { offset: input.offset }),
+      }, atomicQuerySchema, data => ({
+        items: data.items.map(mapAtomic),
+        total: data.total,
+      }))
+    },
+
+    async listScenarios(input) {
+      const agentId = input.agentId ?? config.agentId
+      assertAgentId(scenarioListPath, agentId)
+      if (input.pathPrefix !== undefined)
+        assertRelativePath(scenarioListPath, input.pathPrefix)
+
+      return post(fetchImpl, config, secrets, timeoutMs, scenarioListPath, {
+        team_id: config.teamId,
+        agent_id: agentId,
+        user_id: config.userId,
+        ...(input.pathPrefix === undefined ? {} : { path_prefix: input.pathPrefix }),
+      }, scenarioListSchema, data => ({
+        entries: data.entries.map(mapScenario),
+        total: data.total,
+      }))
+    },
+
+    async readScenario(input) {
+      const agentId = input.agentId ?? config.agentId
+      assertAgentId(scenarioReadPath, agentId)
+      assertRelativePath(scenarioReadPath, input.path)
+
+      return post(fetchImpl, config, secrets, timeoutMs, scenarioReadPath, {
+        team_id: config.teamId,
+        agent_id: agentId,
+        user_id: config.userId,
+        path: input.path,
+      }, scenarioReadSchema, data => ({
+        path: data.path,
+        content: data.content,
+        ...(data.version === undefined || data.version === null ? {} : { version: data.version }),
+        ...(data.created_at ? { createdAt: data.created_at } : {}),
+        ...(data.updated_at ? { updatedAt: data.updated_at } : {}),
+      }))
+    },
+
+    async readCore(input) {
+      const agentId = input.agentId ?? config.agentId
+      assertAgentId(coreReadPath, agentId)
+
+      return post(fetchImpl, config, secrets, timeoutMs, coreReadPath, {
+        team_id: config.teamId,
+        agent_id: agentId,
+        user_id: config.userId,
+      }, coreReadSchema, data => ({
+        content: data.content,
+        ...(data.version === undefined || data.version === null ? {} : { version: data.version }),
+        ...(data.team_id ? { teamId: data.team_id } : {}),
+        ...(data.agent_id ? { agentId: data.agent_id } : {}),
+        ...(data.created_at ? { createdAt: data.created_at } : {}),
+        ...(data.updated_at ? { updatedAt: data.updated_at } : {}),
+      }))
+    },
   }
 }
 
@@ -332,17 +535,11 @@ async function post<TSchema, TResult>(
 }
 
 function headers(config: MemoryClientConfig) {
-  const result: Record<string, string> = {
+  return {
     'content-type': 'application/json',
-    'x-request-id': crypto.randomUUID(),
+    'authorization': `Bearer ${config.apiKey}`,
+    'x-tdai-service-id': config.serviceId,
   }
-
-  if (config.apiKey)
-    result.authorization = `Bearer ${config.apiKey}`
-  if (config.serviceId)
-    result['x-tdai-service-id'] = config.serviceId
-
-  return result
 }
 
 function parseEnvelope(text: string, path: string, status: number, secrets: string[]) {
@@ -409,8 +606,9 @@ function assertMessages(messages: ConversationMessageInput[]) {
       rejectInput(addPath, 'Conversation message role must be user or assistant.')
     if (message.content.length < 1 || message.content.length > 8192)
       rejectInput(addPath, 'Conversation message content must be 1 to 8192 characters.')
-    if (message.timestamp !== undefined && !Number.isFinite(message.timestamp))
-      rejectInput(addPath, 'Conversation message time must be a finite number.')
+    // The gateway returns 400 when `timestamp` is a number. It accepts `2026-11-01T00:00:00Z`.
+    if (message.timestamp !== undefined && (typeof message.timestamp !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(message.timestamp)))
+      rejectInput(addPath, 'Conversation message time must be an ISO-8601 UTC time.')
   }
 }
 
@@ -431,4 +629,62 @@ function assertOffset(offset: number | undefined) {
     return
   if (!Number.isInteger(offset) || offset < 0)
     rejectInput(queryPath, 'Query offset must be a non-negative integer.')
+}
+
+function assertPage(path: string, limit: number | undefined, offset: number | undefined) {
+  if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 100))
+    rejectInput(path, 'Query limit must be an integer from 1 to 100.')
+  if (offset !== undefined && (!Number.isInteger(offset) || offset < 0))
+    rejectInput(path, 'Query offset must be a non-negative integer.')
+}
+
+function assertRelativePath(path: string, value: string) {
+  if (value.trim() === '' || value.length > 512 || value.includes('..') || value.startsWith('/') || value.includes('\\'))
+    rejectInput(path, 'Scenario path must be a relative path.')
+}
+
+function mapAtomic(item: {
+  id: string
+  version?: string | number
+  type: string
+  background?: string
+  content: string
+  created_at?: string
+  updated_at?: string
+  team_id?: string
+  user_id?: string
+  agent_id?: string
+}): AtomicRecord {
+  return {
+    id: item.id,
+    version: item.version ?? 0,
+    type: item.type,
+    content: item.content,
+    ...(item.background ? { background: item.background } : {}),
+    ...(item.created_at ? { createdAt: item.created_at } : {}),
+    ...(item.updated_at ? { updatedAt: item.updated_at } : {}),
+    ...(item.team_id ? { teamId: item.team_id } : {}),
+    ...(item.user_id ? { userId: item.user_id } : {}),
+    ...(item.agent_id ? { agentId: item.agent_id } : {}),
+  }
+}
+
+function mapScenario(entry: {
+  path: string
+  summary?: string
+  version: string | number
+  created_at?: string
+  updated_at?: string
+  team_id?: string
+  agent_id?: string
+}): ScenarioRecord {
+  return {
+    path: entry.path,
+    version: entry.version,
+    ...(entry.summary ? { summary: entry.summary } : {}),
+    ...(entry.created_at ? { createdAt: entry.created_at } : {}),
+    ...(entry.updated_at ? { updatedAt: entry.updated_at } : {}),
+    ...(entry.team_id ? { teamId: entry.team_id } : {}),
+    ...(entry.agent_id ? { agentId: entry.agent_id } : {}),
+  }
 }

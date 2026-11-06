@@ -17,14 +17,18 @@ const { serviceRead, serviceError } = storeToRefs(memory)
 
 const KEY = 'settings.pages.modules.memory-long-term.memories'
 
-/** General memories first, then each character card, and any other card id that kept a memory. */
+function characterName() {
+  return t('settings.pages.modules.memory-long-term.unknown-character')
+}
+
+/** General memories first, then each character card, and any character with no card name. */
 const groups = computed(() => {
   const personas = new Map<string, string>()
   for (const [id, card] of cards.value)
-    personas.set(id, card.name || id)
+    personas.set(id, card.name.trim() || characterName())
   for (const entry of memory.entries) {
     if (entry.persona && !personas.has(entry.persona))
-      personas.set(entry.persona, entry.persona)
+      personas.set(entry.persona, characterName())
   }
   return [
     { key: 'general', title: t(`${KEY}.general`), icon: 'i-solar:global-bold-duotone', entries: memory.entries.filter(entry => !entry.persona) },

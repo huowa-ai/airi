@@ -1116,9 +1116,9 @@ pages:
         user: User id
         user-description: The same user id on every app that shares this service.
         key: API key
-        key-description: Optional. Leave this empty when the local service does not ask for a key. The key stays on this device.
+        key-description: Required. The gateway rejects a call that has no Authorization header. An empty field sends the key local. The key stays on this device.
         service-id: Service id
-        service-id-description: Optional. Send this when the service asks for x-tdai-service-id. It is not a key.
+        service-id-description: Required. The gateway rejects a call that has no x-tdai-service-id header. An empty field sends default.
       memories:
         title: Memories
         description: Each character keeps its own secrets, and the others cannot see them. After you share a secret, every character knows it, and you cannot take it back. You can delete any secret, but you cannot rewrite one.
@@ -1136,7 +1136,7 @@ pages:
           description: Each character's secrets, and the secrets that they share.
       graph:
         title: Memory graph
-        description: A view of the facts the memory service returned. The picture uses a whale-shaped layout. Lines in the picture are layout only.
+        description: A view of the records the memory service returned. The picture uses a whale-shaped layout. Lines in the picture are layout only.
         off-title: Memory service is off
         off: Turn the memory service on to see facts. This view does not list memories kept only on this device.
         error-title: Memory service error
@@ -1149,10 +1149,26 @@ pages:
         unavailable: The graph view did not start. The fact list still shows the same facts.
         layers:
           l0: L0 fact
-          absent: '{layer} was not returned'
+          l1: L1 atom
+          l2: L2 scene
+          l3: L3 persona
+        scope: Scope
+        scope-note: Scenes and the persona follow the team and the character. They are not limited to this user.
+        scope-team: This record follows the team and the character. It is not limited to this user.
+        layer-error: '{layer} request failed. {message}'
+        truncated: 'The service has more {layer} records than this view draws.'
+        type: Type
+        path: Path
+        summary: Summary
+        background: Background
+        types:
+          episodic: Episodic
+          persona: Persona
+          instruction: Instruction
+          other: Other
         derived: Derived layout line. This line is not a stored relation.
-        counts: 'Facts: {count}. Derived layout lines: {lines}.'
-        canvas-label: 'Memory graph of {count} facts and {lines} derived layout lines.'
+        counts: 'Records: {count}. Derived layout lines: {lines}.'
+        canvas-label: 'Memory graph of {count} records and {lines} derived layout lines.'
         facts: Facts
         list-empty: No facts to list.
         detail: Fact
@@ -1167,7 +1183,7 @@ pages:
         modality: 'Modality {name}'
         entry:
           title: Memory graph
-          description: Facts from the memory service, in a whale-shaped layout.
+          description: Records from the memory service, in a whale-shaped layout.
       recipes:
         title: Recipes
         empty: No recipes yet.
@@ -1240,6 +1256,7 @@ pages:
           label: Let the character propose recipes
           description: A recipe that you ask for is saved as a proposal. It works only after you approve it.
         model_flow: The character decides what each run does
+      unknown-character: Unknown character
       title: Long-Term Memory
     memory-short-term:
       description: Short-term memory specific settings and management

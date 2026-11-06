@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { memoryClientConfigStatus, memoryClientEnv, readMemoryClientConfig } from '../src/client-config'
+import { defaultMemoryApiKey, defaultMemoryServiceId, memoryClientConfigStatus, memoryClientEnv, readMemoryClientConfig } from '../src/client-config'
 
 const secret = 'example-key'
 const endpoint = 'https://memory.example.com'
@@ -29,6 +29,16 @@ describe('readMemoryClientConfig', () => {
       memoryClientEnv.agentId,
     ])
     expect(result.invalid).toEqual([])
+  })
+
+  it('uses the local key and the default service id when they are empty', () => {
+    const result = readMemoryClientConfig(configuredEnv())
+
+    expect(result.configured).toBe(true)
+    if (!result.configured)
+      return
+    expect(result.config.apiKey).toBe(defaultMemoryApiKey)
+    expect(result.config.serviceId).toBe(defaultMemoryServiceId)
   })
 
   it('accepts a server origin and keeps the key out of the status', () => {

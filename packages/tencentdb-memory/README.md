@@ -8,7 +8,7 @@ MemoryCore is the intended fact store. `useMemoryStore` stays the writer that to
 
 - A channel client that connects to `ws://localhost:6121/ws` and announces `tencentdb-memory`.
 - A `MemoryStorage` port and an in-process fake. Two callers can share one record map.
-- A MemoryCore v3 client for `POST /v3/conversation/add` and `POST /v3/conversation/search`.
+- A MemoryCore v3 client for L0 conversation calls, and for L1, L2, and L3 reads. The graph reads those layers. This package does not write them.
 
 The module does not listen for `input:text`. Startup does not call MemoryCore.
 
@@ -30,14 +30,28 @@ Set these variables in the environment. Do not commit them.
 - `TENCENTDB_MEMORY_TEAM_ID` is one deployment id. Later clients must use the same value. This package does not sync them.
 - `TENCENTDB_MEMORY_USER_ID` is the owner. Later clients must use the same value. This package does not sync them.
 - `TENCENTDB_MEMORY_AGENT_ID` is the default agent id for a v3 call.
+- `TENCENTDB_MEMORY_API_KEY` is the bearer token. The gateway returns 401 when the header is missing. An empty value sends `local`.
+- `TENCENTDB_MEMORY_SERVICE_ID` is `x-tdai-service-id`. The gateway returns 401 when the header is missing. An empty value sends `default`.
 
-`TENCENTDB_MEMORY_API_KEY` and `TENCENTDB_MEMORY_SERVICE_ID` are optional. The client sends them only when they are set. The URL must not carry a user name, a password, a query, or a path.
+The URL must not carry a user name, a password, a query, or a path. The client always sends `Authorization` and `x-tdai-service-id`. It does not send `x-request-id`. `timestamp` on a conversation message is an ISO-8601 UTC string. The gateway rejects a number.
 
-When the four required variables are set, this command adds one L0 line and searches for it:
+When the endpoint, the team id, the user id, and the agent id are set, this command adds one L0 line and searches for it:
 
 ```shell
 pnpm -F @proj-airi/tencentdb-memory smoke:l0
 ```
+
+## Call the gateway from a browser
+
+The settings page calls the gateway from the browser. Set `server.corsOrigins` to the page origin. Allow the headers `Content-Type`, `Authorization`, and `x-tdai-service-id`.
+
+A gateway that allows only `Content-Type` and `Authorization` blocks the page. The browser sends `x-tdai-service-id` on every call.
+
+## Scope of L2 and L3
+
+L0 facts and L1 atoms follow the team, the user, and the character. L2 scenes and the L3 persona follow the team and the character only. The gateway scope is `team:<team id>|agent:<agent id>`. A second user in that team and character sees the same scenes and the same persona. This package does not filter them by user. The graph says so in the record detail.
+
+A later change can give each user a separate character id or a separate team id. This package does not do that.
 
 ## Use the fake storage
 
@@ -59,7 +73,7 @@ Import the channel entry from `@proj-airi/tencentdb-memory/node`. That entry ope
 
 - Connect a process to the AIRI channel as the memory module.
 - Test memory reads and writes without a gateway.
-- Call MemoryCore L0 add and search from a process that can hold the key.
+- Call MemoryCore L0 writes, and L1, L2, and L3 reads, from a process that can hold the key.
 
 ## When not to use it
 
